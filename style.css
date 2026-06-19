@@ -1,0 +1,105 @@
+* {
+  background-color: #306BAC;
+  color: #141B41;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: #1e1e2e;
+}
+
+.app-layout {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.editor-panel,
+.viewer-panel {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-panel {
+  border-right: 1px solid #313244;
+  background: #11111b;
+}
+
+.editor-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #224377;
+  border-bottom: 1px solid #313244;
+}
+
+.editor-label {
+  margin: 0;
+  font-size: 1em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #98B9F2;
+  background-color: transparent;
+}
+
+.run-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid #98B9F2;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: #98B9F2;
+  background-color: #306BAC;
+  cursor: pointer;
+}
+
+.run-button:hover {
+  background-color: #3d7bc4;
+}
+
+.run-button:active {
+  background-color: #224377;
+}
+
+.editor-input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0.75rem;
+  border: none;
+  resize: none;
+  font-family: "Cartograph CF", monospace;
+  font-size: 1em;
+  color: #cdd6f4;
+  background: #11111b;
+}
+
+.editor-input:focus {
+  outline: none;
+}
+
+.app-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: none;
+}

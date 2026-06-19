@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Shiny-Forge</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+
+    <main class="app-layout">
+      <section class="editor-panel" aria-label="App source code">
+        <div class="editor-toolbar">
+          <label class="editor-label" for="app-code">app.R</label>
+          <button type="button" id="run-button" class="run-button" aria-label="Run app">
+            ▶
+          </button>
+        </div>
+        <textarea
+          id="app-code"
+          class="editor-input"
+          spellcheck="false"
+          placeholder="library(shiny)&#10;&#10;ui &lt;- fluidPage(&#10;  titlePanel(&quot;Hello Shiny!&quot;)&#10;)&#10;&#10;server &lt;- function(input, output) {}&#10;&#10;shinyApp(ui, server)"
+        ></textarea>
+      </section>
+
+      <section class="viewer-panel" aria-label="App preview">
+        <iframe
+          id="app-frame"
+          class="app-frame"
+          title="Shiny app"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        ></iframe>
+      </section>
+    </main>
+    <script type="module" src="runApp.js"></script>
+  </body>
+</html>
