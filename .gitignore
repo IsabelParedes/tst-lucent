@@ -1,1 +1,5 @@
 _env-wasm
+R_HOME
+R_HOME-manifest.json
+R
+R.wasm
