@@ -21,8 +21,15 @@
           id="app-code"
           class="editor-input"
           spellcheck="false"
-          placeholder="library(shiny)&#10;&#10;ui &lt;- fluidPage(&#10;  titlePanel(&quot;Hello Shiny!&quot;)&#10;)&#10;&#10;server &lt;- function(input, output) {}&#10;&#10;shinyApp(ui, server)"
-        ></textarea>
+        >library(shiny)
+
+ui &lt;- fluidPage(
+  titlePanel("Hello Shiny!")
+)
+
+server &lt;- function(input, output) {}
+
+shinyApp(ui, server)</textarea>
       </section>
 
       <section class="viewer-panel" aria-label="App preview">

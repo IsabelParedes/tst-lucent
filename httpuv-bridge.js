@@ -2,8 +2,9 @@ import {
   CHANNEL,
   HTTPUV_OPTIONS,
   MSG,
+  WS_FRAME,
 } from "./httpuv-constants.js";
-import { getShinyPrefix } from "./httpuv-prefix.js";
+import { getShinyPrefix, parseSessionAction, shinyAppUrl } from "./httpuv-prefix.js";
 
 /** @typedef {Record<string, string>} HeaderMap */
 
@@ -109,6 +110,105 @@ export function buildReq(msg) {
 }
 
 /**
+ * Absolute pathname for shiny-socket.js (served next to runApp.js).
+ * @returns {string}
+ */
+export function shinySocketScriptUrl() {
+  return new URL("./shiny-socket.js", import.meta.url).pathname;
+}
+
+/**
+ * Inject the virtual Shiny socket bootstrap into an HTML document.
+ * @param {string} html
+ * @returns {string}
+ */
+export function injectShinySocketBootstrap(html) {
+  const tag = `<script type="module" src="${shinySocketScriptUrl()}"></script>`;
+  if (html.includes("</head>")) {
+    return html.replace("</head>", `  ${tag}\n</head>`);
+  }
+  if (html.includes("<body")) {
+    return html.replace(/<body([^>]*)>/, `<body$1>\n  ${tag}`);
+  }
+  return `${tag}\n${html}`;
+}
+
+/**
+ * @param {ArrayBuffer | null | undefined} body
+ * @returns {{ binary: boolean, message: string | ArrayBuffer }}
+ */
+function sessionMessageFromBody(body) {
+  if (!body || body.byteLength === 0) {
+    return { binary: false, message: "" };
+  }
+  const bytes = new Uint8Array(body);
+  const isText = bytes.every((b) => b === 9 || b === 10 || b === 13 || (b >= 32 && b <= 126));
+  if (isText) {
+    return { binary: false, message: new TextDecoder().decode(body) };
+  }
+  return { binary: true, message: body };
+}
+
+/**
+ * @param {ChannelMessage & { uuid: string, method: string, url: string, headers?: HeaderMap, body?: ArrayBuffer | null }} msg
+ * @param {{ action: string, handle: string | null }} session
+ */
+function handleSessionHttp(msg, session) {
+  const channel = getChannel();
+
+  switch (session.action) {
+    case "open": {
+      const handle = crypto.randomUUID();
+      const req = buildReq(msg);
+      channel.write({ type: CHANNEL.WS_OPEN, handle, req });
+      drainInboundChannel();
+      sendTcpResponse(
+        msg.uuid,
+        200,
+        { "Content-Type": "application/json" },
+        JSON.stringify({ handle }),
+      );
+      break;
+    }
+
+    case "send": {
+      if (!session.handle) {
+        sendTcpResponse(msg.uuid, 400, { "Content-Type": "text/plain" }, "missing handle");
+        return;
+      }
+      const { binary, message } = sessionMessageFromBody(msg.body);
+      channel.write({
+        type: CHANNEL.WS_MESSAGE,
+        handle: session.handle,
+        binary,
+        message,
+      });
+      drainInboundChannel();
+      sendTcpResponse(msg.uuid, 204, {}, null);
+      break;
+    }
+
+    case "close": {
+      if (!session.handle) {
+        sendTcpResponse(msg.uuid, 400, { "Content-Type": "text/plain" }, "missing handle");
+        return;
+      }
+      channel.write({
+        type: CHANNEL.WS_CLOSE,
+        handle: session.handle,
+        body: msg.body,
+      });
+      drainInboundChannel();
+      sendTcpResponse(msg.uuid, 204, {}, null);
+      break;
+    }
+
+    default:
+      sendTcpResponse(msg.uuid, 404, { "Content-Type": "text/plain" }, "unknown session action");
+  }
+}
+
+/**
  * @param {string} uuid
  * @param {number} status
  * @param {HeaderMap} headers
@@ -131,46 +231,63 @@ function getServiceWorkerController() {
 }
 
 /**
- * @param {ChannelMessage} msg
+ * @param {object} msg
  */
-function postToServiceWorker(msg) {
+async function postToServiceWorker(msg) {
   const controller = getServiceWorkerController();
-  if (!controller) {
-    console.warn("[httpuv-bridge] No service worker controller for outbound message", msg.type);
-    return;
-  }
-
   const body = encodeResponseBody(
     msg.type === CHANNEL.TCP_RESPONSE ? msg.data?.body : msg.data?.message,
   );
   const transfer = body instanceof ArrayBuffer ? [body] : [];
 
   if (msg.type === CHANNEL.TCP_RESPONSE) {
-    controller.postMessage(
-      {
-        type: MSG.HTTP_RESPONSE,
-        uuid: msg.uuid,
-        status: msg.data?.status ?? 500,
-        headers: normalizeHeaders(msg.data?.headers),
-        body,
-      },
-      transfer,
-    );
+    const outbound = {
+      type: MSG.HTTP_RESPONSE,
+      uuid: msg.uuid,
+      status: msg.data?.status ?? 500,
+      headers: normalizeHeaders(msg.data?.headers),
+      body,
+    };
+    if (controller) {
+      controller.postMessage(outbound, transfer);
+      return;
+    }
+    await fetch(shinyAppUrl("__host__/push"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(outbound),
+    });
     return;
   }
 
   if (msg.type === CHANNEL.WS_RESPONSE) {
-    controller.postMessage(
-      {
-        type: MSG.WS_PUSH,
-        handle: msg.data?.handle,
-        binary: msg.data?.binary,
-        wsType: msg.data?.type,
-        message: body,
-      },
-      transfer,
-    );
+    const outbound = {
+      type: MSG.WS_PUSH,
+      handle: msg.data?.handle,
+      binary: msg.data?.binary ?? false,
+      wsType: msg.data?.type ?? WS_FRAME.SEND,
+      message: body,
+    };
+    if (controller) {
+      controller.postMessage(outbound, transfer);
+      return;
+    }
+    await fetch(shinyAppUrl("__host__/push"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...outbound,
+        message: typeof body === "string" ? body : undefined,
+      }),
+    });
   }
+}
+
+/**
+ * @param {ChannelMessage} msg
+ */
+function postToServiceWorkerSync(msg) {
+  void postToServiceWorker(msg);
 }
 
 function createChannel() {
@@ -194,7 +311,7 @@ function createChannel() {
         msg.type === CHANNEL.TCP_RESPONSE ||
         msg.type === CHANNEL.WS_RESPONSE
       ) {
-        postToServiceWorker(msg);
+        postToServiceWorkerSync(msg);
         return;
       }
       inbox.push(msg);
@@ -229,7 +346,7 @@ export function dispatch(msg) {
       const handled =
         invokeROption?.(HTTPUV_OPTIONS.ON_WS_OPEN, msg.handle, msg.req) ?? false;
       if (!handled) {
-        console.warn("[httpuv-bridge] no R handler for ws open", msg.handle);
+        console.info("[httpuv-bridge] ws open (no R handler yet)", msg.handle);
       }
       break;
     }
@@ -243,7 +360,16 @@ export function dispatch(msg) {
           msg.message,
         ) ?? false;
       if (!handled) {
-        console.warn("[httpuv-bridge] no R handler for ws message", msg.handle);
+        console.info("[httpuv-bridge] ws message (no R handler yet)", msg.handle);
+        getChannel().write({
+          type: CHANNEL.WS_RESPONSE,
+          data: {
+            handle: msg.handle,
+            binary: msg.binary,
+            type: WS_FRAME.SEND,
+            message: msg.message,
+          },
+        });
       }
       break;
     }
@@ -297,6 +423,17 @@ function installServiceWorkerListener() {
 
     switch (msg.type) {
       case MSG.HTTP_REQUEST: {
+        const session = parseSessionAction(msg.url, getShinyPrefix());
+        if (session && session.action !== "recv") {
+          console.info("[httpuv-bridge] inbound session request", {
+            uuid: msg.uuid,
+            action: session.action,
+            handle: session.handle,
+          });
+          handleSessionHttp(msg, session);
+          break;
+        }
+
         console.info("[httpuv-bridge] inbound http request", {
           uuid: msg.uuid,
           method: msg.method,
@@ -340,6 +477,26 @@ export function installHttpuvBridge() {
   httpuv.dispatch = dispatch;
   httpuv.drainInboundChannel = drainInboundChannel;
   httpuv.buildReq = buildReq;
+  httpuv.injectShinySocketBootstrap = injectShinySocketBootstrap;
+  httpuv.shinySocketScriptUrl = shinySocketScriptUrl;
+
+  /**
+   * Push a message to a virtual socket recv waiter (used by R via channel.write).
+   * @param {string} handle
+   * @param {unknown} message
+   * @param {{ binary?: boolean, wsType?: string }} [opts]
+   */
+  httpuv.pushWsMessage = (handle, message, opts = {}) => {
+    getChannel().write({
+      type: CHANNEL.WS_RESPONSE,
+      data: {
+        handle,
+        binary: opts.binary ?? false,
+        type: opts.wsType ?? WS_FRAME.SEND,
+        message,
+      },
+    });
+  };
 
   /**
    * Called from R (via emscripten) once httpuv registers option handlers.

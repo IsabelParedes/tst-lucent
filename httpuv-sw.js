@@ -1,16 +1,31 @@
 import {
   MSG,
   REQUEST_TIMEOUT_MS,
+  SESSION_RECV_TIMEOUT_MS,
+  WS_FRAME,
 } from "./httpuv-constants.js";
-import { resolveShinyPrefix } from "./httpuv-prefix.js";
+import { parseSessionAction, resolveSessionPrefix, resolveShinyPrefix, isHostPushUrl } from "./httpuv-prefix.js";
 
 const SHINY_PREFIX = resolveShinyPrefix(import.meta.url);
+const SESSION_PREFIX = resolveSessionPrefix(import.meta.url);
 
 /** @type {string | null} */
 let hostClientId = null;
 
 /** @type {Map<string, { resolve: (resp: PendingResponse) => void, reject: (err: Error) => void, timer: ReturnType<typeof setTimeout> }>} */
 const pendingHttp = new Map();
+
+/**
+ * @typedef {object} RecvWaiter
+ * @property {(response: Response) => void} resolve
+ * @property {ReturnType<typeof setTimeout>} timer
+ */
+
+/** @type {Map<string, RecvWaiter[]>} */
+const pendingRecv = new Map();
+
+/** @type {Map<string, object[]>} */
+const queuedWsPush = new Map();
 
 /**
  * @typedef {object} PendingResponse
@@ -70,19 +85,172 @@ async function headersToObject(request) {
 }
 
 /**
+ * @param {string} handle
+ * @param {object} msg
+ */
+function deliverWsPush(handle, msg) {
+  const queue = pendingRecv.get(handle);
+  if (queue && queue.length > 0) {
+    const waiter = queue.shift();
+    clearTimeout(waiter.timer);
+    if (queue.length === 0) {
+      pendingRecv.delete(handle);
+    }
+    const headers = new Headers();
+    headers.set("X-Httpuv-WS-Type", msg.wsType ?? WS_FRAME.SEND);
+    if (!msg.binary) {
+      headers.set("Content-Type", "text/plain; charset=UTF-8");
+    }
+    waiter.resolve(
+      new Response(msg.message ?? null, {
+        status: 200,
+        headers,
+      }),
+    );
+    return;
+  }
+
+  if (!queuedWsPush.has(handle)) {
+    queuedWsPush.set(handle, []);
+  }
+  queuedWsPush.get(handle).push(msg);
+}
+
+/**
+ * @param {FetchEvent} event
+ * @returns {Promise<Response>}
+ */
+async function handleSessionRecv(event) {
+  const url = new URL(event.request.url);
+  const handle = url.searchParams.get("handle");
+  if (!handle) {
+    return new Response("missing handle query parameter", {
+      status: 400,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  const queued = queuedWsPush.get(handle);
+  if (queued && queued.length > 0) {
+    const msg = queued.shift();
+    if (queued.length === 0) {
+      queuedWsPush.delete(handle);
+    }
+    const headers = new Headers();
+    headers.set("X-Httpuv-WS-Type", msg.wsType ?? WS_FRAME.SEND);
+    if (!msg.binary) {
+      headers.set("Content-Type", "text/plain; charset=UTF-8");
+    }
+    return new Response(msg.message ?? null, { status: 200, headers });
+  }
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const waiters = pendingRecv.get(handle);
+      if (!waiters) {
+        return;
+      }
+      const idx = waiters.findIndex((w) => w.timer === timer);
+      if (idx !== -1) {
+        waiters.splice(idx, 1);
+      }
+      if (waiters.length === 0) {
+        pendingRecv.delete(handle);
+      }
+      resolve(new Response(null, { status: 204 }));
+    }, SESSION_RECV_TIMEOUT_MS);
+
+    if (!pendingRecv.has(handle)) {
+      pendingRecv.set(handle, []);
+    }
+    pendingRecv.get(handle).push({ resolve, timer });
+  });
+}
+
+/**
+ * @returns {Promise<Client | undefined>}
+ */
+async function getHostClient() {
+  if (hostClientId) {
+    const client = await self.clients.get(hostClientId);
+    if (client) {
+      return client;
+    }
+  }
+  const clients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  return clients[0];
+}
+
+/**
+ * @param {object} msg
+ */
+function handleHostOutboundMessage(msg) {
+  switch (msg.type) {
+    case MSG.HTTP_RESPONSE: {
+      const pending = pendingHttp.get(msg.uuid);
+      if (!pending) {
+        console.warn("[httpuv-sw] No pending request for", msg.uuid);
+        return;
+      }
+      clearTimeout(pending.timer);
+      pendingHttp.delete(msg.uuid);
+      pending.resolve({
+        status: msg.status ?? 500,
+        headers: msg.headers ?? {},
+        body: msg.body ?? null,
+      });
+      break;
+    }
+    case MSG.WS_PUSH: {
+      if (!msg.handle) {
+        console.warn("[httpuv-sw] WS_PUSH missing handle");
+        return;
+      }
+      deliverWsPush(String(msg.handle), msg);
+      break;
+    }
+    default:
+      console.warn("[httpuv-sw] Ignoring unknown host push message", msg.type);
+  }
+}
+
+/**
+ * @param {FetchEvent} event
+ * @returns {Promise<Response>}
+ */
+async function handleHostPush(event) {
+  try {
+    const msg = await event.request.json();
+    handleHostOutboundMessage(msg);
+    return new Response(null, { status: 204 });
+  } catch (err) {
+    console.error("[httpuv-sw] host push failed", err);
+    return new Response("bad host push payload", { status: 400 });
+  }
+}
+
+/**
  * @param {FetchEvent} event
  * @returns {Promise<Response>}
  */
 async function handleShinyFetch(event) {
   const request = event.request;
   const uuid = crypto.randomUUID();
-  const hostClient = hostClientId ? await self.clients.get(hostClientId) : null;
+  const hostClient = await getHostClient();
 
   if (!hostClient) {
     return new Response("Shiny host page is not ready", {
       status: 503,
       headers: { "Content-Type": "text/plain" },
     });
+  }
+
+  if (!hostClientId && "id" in hostClient) {
+    hostClientId = hostClient.id;
+    console.info("[httpuv-sw] Discovered host client", hostClientId);
   }
 
   const body =
@@ -123,6 +291,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (isHostPushUrl(event.request.url, SHINY_PREFIX)) {
+    event.respondWith(handleHostPush(event));
+    return;
+  }
+
+  const session = parseSessionAction(event.request.url, SHINY_PREFIX);
+  if (session?.action === "recv") {
+    event.respondWith(handleSessionRecv(event));
+    return;
+  }
+
   event.respondWith(handleShinyFetch(event));
 });
 
@@ -142,24 +321,12 @@ self.addEventListener("message", (event) => {
     }
 
     case MSG.HTTP_RESPONSE: {
-      const pending = pendingHttp.get(msg.uuid);
-      if (!pending) {
-        console.warn("[httpuv-sw] No pending request for", msg.uuid);
-        return;
-      }
-      clearTimeout(pending.timer);
-      pendingHttp.delete(msg.uuid);
-      pending.resolve({
-        status: msg.status ?? 500,
-        headers: msg.headers ?? {},
-        body: msg.body ?? null,
-      });
+      handleHostOutboundMessage(msg);
       break;
     }
 
     case MSG.WS_PUSH: {
-      // Outbound Shiny session messages are delivered to long-poll waiters in a
-      // later step; for now acknowledge receipt so the main page can log flow.
+      handleHostOutboundMessage(msg);
       break;
     }
 
@@ -169,6 +336,14 @@ self.addEventListener("message", (event) => {
         pending.reject(new Error("httpuv stopped"));
         pendingHttp.delete(uuid);
       }
+      for (const [, waiters] of pendingRecv) {
+        for (const waiter of waiters) {
+          clearTimeout(waiter.timer);
+          waiter.resolve(new Response(null, { status: 204 }));
+        }
+      }
+      pendingRecv.clear();
+      queuedWsPush.clear();
       hostClientId = null;
       break;
     }

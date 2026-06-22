@@ -29,11 +29,56 @@ export function getShinyPrefix() {
   return shinyPrefix;
 }
 
+/** Session directory name under the Shiny virtual app prefix. */
+export const SESSION_DIR = "__session__";
+
+/** Host → SW outbound path (fetch fallback when controller.postMessage unavailable). */
+export const HOST_DIR = "__host__";
+
+/**
+ * @param {string | URL} fromUrl
+ * @returns {string}
+ */
+export function resolveSessionPrefix(fromUrl) {
+  return `${resolveShinyPrefix(fromUrl)}${SESSION_DIR}/`;
+}
+
 /**
  * @returns {string}
  */
 export function getSessionPrefix() {
-  return `${getShinyPrefix()}__session__/`;
+  return `${getShinyPrefix()}${SESSION_DIR}/`;
+}
+
+/**
+ * @param {string} urlString
+ * @param {string} shinyPrefix
+ * @returns {{ action: string, handle: string | null } | null}
+ */
+export function parseSessionAction(urlString, shinyPrefix) {
+  const url = new URL(urlString);
+  const sessionPrefix = `${shinyPrefix}${SESSION_DIR}/`;
+  if (!url.pathname.startsWith(sessionPrefix)) {
+    return null;
+  }
+  const action = url.pathname.slice(sessionPrefix.length).replace(/\/$/, "");
+  if (!["open", "send", "recv", "close"].includes(action)) {
+    return null;
+  }
+  return {
+    action,
+    handle: url.searchParams.get("handle"),
+  };
+}
+
+/**
+ * @param {string} urlString
+ * @param {string} shinyPrefix
+ * @returns {boolean}
+ */
+export function isHostPushUrl(urlString, shinyPrefix) {
+  const url = new URL(urlString);
+  return url.pathname === `${shinyPrefix}${HOST_DIR}/push`;
 }
 
 /**

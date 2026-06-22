@@ -1,5 +1,14 @@
+/** WebSocket frame types used by httpuv (mirrors native httpuv). */
+export const WS_FRAME = {
+  SEND: "websocket.send",
+  CLOSE: "websocket.close",
+};
+
 /** Max time the service worker waits for the main page to answer a request. */
 export const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Max time a session recv long-poll waits before returning 204. */
+export const SESSION_RECV_TIMEOUT_MS = 25_000;
 
 /** Message types exchanged between the service worker and the main page. */
 export const MSG = {

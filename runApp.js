@@ -22,11 +22,75 @@ let swRegistrationPromise = null;
 /** @type {Promise<void> | null} */
 let httpuvReadyPromise = null;
 
+const HTTPUV_SW_RELOAD_KEY = "httpuv-sw-reload";
+
 function announceHostToServiceWorker() {
   const prefix = resolveShinyPrefix(import.meta.url);
-  navigator.serviceWorker.controller?.postMessage({
-    type: MSG.REGISTER_HOST,
-    shinyPrefix: prefix,
+  const msg = { type: MSG.REGISTER_HOST, shinyPrefix: prefix };
+  const controller = navigator.serviceWorker.controller;
+  if (controller) {
+    controller.postMessage(msg);
+    console.info("[httpuv] Announced host to service worker");
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Wait until navigator.serviceWorker.controller is set (optional, non-fatal).
+ * @param {number} timeoutMs
+ */
+async function waitForServiceWorkerController(timeoutMs = 3_000) {
+  if (navigator.serviceWorker.controller) {
+    return navigator.serviceWorker.controller;
+  }
+
+  await navigator.serviceWorker.ready;
+  if (navigator.serviceWorker.controller) {
+    return navigator.serviceWorker.controller;
+  }
+
+  return new Promise((resolve, reject) => {
+    /** @type {ReturnType<typeof setInterval> | undefined} */
+    let poll;
+
+    const deadline = setTimeout(() => {
+      if (poll) clearInterval(poll);
+      reject(new Error("timeout"));
+    }, timeoutMs);
+
+    const onController = () => {
+      if (navigator.serviceWorker.controller) {
+        clearTimeout(deadline);
+        if (poll) clearInterval(poll);
+        navigator.serviceWorker.removeEventListener("controllerchange", onController);
+        resolve(navigator.serviceWorker.controller);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("controllerchange", onController);
+    poll = setInterval(onController, 100);
+  });
+}
+
+/**
+ * @param {ServiceWorkerRegistration} reg
+ */
+async function waitForWorkerActivated(reg) {
+  const worker = reg.installing ?? reg.waiting ?? reg.active;
+  if (!worker) {
+    await navigator.serviceWorker.ready;
+    return;
+  }
+  if (worker.state === "activated") {
+    return;
+  }
+  await new Promise((resolve) => {
+    worker.addEventListener("statechange", () => {
+      if (worker.state === "activated") {
+        resolve();
+      }
+    });
   });
 }
 
@@ -40,23 +104,40 @@ async function registerHttpuvServiceWorker() {
     return null;
   }
 
-  const reg = await navigator.serviceWorker.register(new URL("./httpuv-sw.js", import.meta.url), {
-    type: "module",
-  });
-  await navigator.serviceWorker.ready;
-
-  if (!navigator.serviceWorker.controller) {
-    await new Promise((resolve) => {
-      navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true });
+  try {
+    const reg = await navigator.serviceWorker.register(new URL("./httpuv-sw.js", import.meta.url), {
+      type: "module",
+      updateViaCache: "none",
     });
-  }
+    await waitForWorkerActivated(reg);
 
-  announceHostToServiceWorker();
-  console.info("[httpuv] Service worker registered", {
-    scope: reg.scope,
-    shinyPrefix: resolveShinyPrefix(import.meta.url),
-  });
-  return reg;
+    if (!navigator.serviceWorker.controller) {
+      const reloaded = sessionStorage.getItem(HTTPUV_SW_RELOAD_KEY);
+      if (!reloaded) {
+        sessionStorage.setItem(HTTPUV_SW_RELOAD_KEY, "1");
+        console.info("[httpuv] Service worker installed — reloading once to activate");
+        window.location.reload();
+        await new Promise(() => {});
+      }
+      console.warn(
+        "[httpuv] Page still not controlled after reload; check Application → Service Workers for httpuv-sw.js errors",
+      );
+    } else {
+      sessionStorage.removeItem(HTTPUV_SW_RELOAD_KEY);
+    }
+
+    await waitForServiceWorkerController().catch(() => undefined);
+    announceHostToServiceWorker();
+    console.info("[httpuv] Service worker registered", {
+      scope: reg.scope,
+      shinyPrefix: resolveShinyPrefix(import.meta.url),
+      controller: Boolean(navigator.serviceWorker.controller),
+    });
+    return reg;
+  } catch (err) {
+    console.error("[httpuv] Service worker registration failed:", err);
+    throw err;
+  }
 }
 
 function ensureHttpuvServiceWorker() {
@@ -79,7 +160,9 @@ export async function ensureHttpuvReady() {
   return httpuvReadyPromise;
 }
 
-void ensureHttpuvReady();
+void ensureHttpuvReady().catch((err) => {
+  console.error("[httpuv] Failed to initialize:", err);
+});
 
 navigator.serviceWorker.addEventListener("controllerchange", () => {
   announceHostToServiceWorker();
@@ -88,6 +171,42 @@ navigator.serviceWorker.addEventListener("controllerchange", () => {
 globalThis.__shinyForge = {
   shinyUrl: (subpath = "") => shinyAppUrl(subpath),
   ensureHttpuvReady,
+  /** Open a virtual socket and send one message (tests session fetch API). */
+  async testVirtualSocket(message = '{"method":"ping"}') {
+    await ensureHttpuvReady();
+    if (!navigator.serviceWorker.controller) {
+      console.warn(
+        "[shiny-forge] No service worker controller — fetch may not be intercepted; unregister old workers and hard-refresh",
+      );
+    }
+
+    const openUrl = new URL("__session__/open", shinyAppUrl());
+    console.info("[shiny-forge] testVirtualSocket: open", openUrl.href);
+    const openRes = await fetch(openUrl, { method: "POST" });
+    if (!openRes.ok) {
+      throw new Error(`session open failed: HTTP ${openRes.status} ${await openRes.text()}`);
+    }
+    const { handle } = await openRes.json();
+    console.info("[shiny-forge] testVirtualSocket: handle", handle);
+
+    const recvUrl = new URL(`__session__/recv?handle=${encodeURIComponent(handle)}`, shinyAppUrl());
+    const sendUrl = new URL(`__session__/send?handle=${encodeURIComponent(handle)}`, shinyAppUrl());
+    const recvPromise = fetch(recvUrl);
+    const sendRes = await fetch(sendUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: message,
+    });
+    if (!sendRes.ok && sendRes.status !== 204) {
+      throw new Error(`session send failed: HTTP ${sendRes.status}`);
+    }
+
+    const recvRes = await recvPromise;
+    const body = await recvRes.text();
+    const result = { handle, status: recvRes.status, body };
+    console.info("[shiny-forge] testVirtualSocket: result", result);
+    return result;
+  },
 };
 
 function rEnv() {
