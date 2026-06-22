@@ -1,4 +1,6 @@
 import { MSG } from "./httpuv-constants.js";
+import { installHttpuvBridge } from "./httpuv-bridge.js";
+import { resolveShinyPrefix, setShinyPrefix, shinyAppUrl } from "./httpuv-prefix.js";
 
 const WASM_R_HOME = "/R_HOME";
 
@@ -17,6 +19,16 @@ const fileCache = new Map();
 let rModulePromise = null;
 /** @type {Promise<ServiceWorkerRegistration | null> | null} */
 let swRegistrationPromise = null;
+/** @type {Promise<void> | null} */
+let httpuvReadyPromise = null;
+
+function announceHostToServiceWorker() {
+  const prefix = resolveShinyPrefix(import.meta.url);
+  navigator.serviceWorker.controller?.postMessage({
+    type: MSG.REGISTER_HOST,
+    shinyPrefix: prefix,
+  });
+}
 
 /**
  * Register the httpuv service worker and announce this page as the WASM host.
@@ -33,9 +45,17 @@ async function registerHttpuvServiceWorker() {
   });
   await navigator.serviceWorker.ready;
 
-  const worker = reg.active ?? reg.installing ?? reg.waiting;
-  worker?.postMessage({ type: MSG.REGISTER_HOST });
-  console.info("[httpuv] Service worker registered");
+  if (!navigator.serviceWorker.controller) {
+    await new Promise((resolve) => {
+      navigator.serviceWorker.addEventListener("controllerchange", resolve, { once: true });
+    });
+  }
+
+  announceHostToServiceWorker();
+  console.info("[httpuv] Service worker registered", {
+    scope: reg.scope,
+    shinyPrefix: resolveShinyPrefix(import.meta.url),
+  });
   return reg;
 }
 
@@ -47,43 +67,28 @@ function ensureHttpuvServiceWorker() {
 }
 
 /**
- * Placeholder handler until httpuv-bridge.js is wired (plan step 1.2).
- * Routes SW fetch requests back with a 503 until R httpuv is ready.
+ * Wait until the httpuv bridge and service worker are ready.
+ * @returns {Promise<void>}
  */
-function installHttpuvServiceWorkerListener() {
-  navigator.serviceWorker.addEventListener("message", (event) => {
-    const msg = event.data;
-    if (!msg || msg.type !== MSG.HTTP_REQUEST) {
-      return;
-    }
-
-    console.info("[httpuv] received httpuv_http_request", {
-      uuid: msg.uuid,
-      method: msg.method,
-      url: msg.url,
-    });
-
-    const controller = navigator.serviceWorker.controller;
-    if (!controller) {
-      return;
-    }
-
-    controller.postMessage({
-      type: MSG.HTTP_RESPONSE,
-      uuid: msg.uuid,
-      status: 503,
-      headers: { "Content-Type": "text/plain" },
-      body: "httpuv bridge not initialized",
-    });
-  });
+export async function ensureHttpuvReady() {
+  if (!httpuvReadyPromise) {
+    setShinyPrefix(resolveShinyPrefix(import.meta.url));
+    installHttpuvBridge();
+    httpuvReadyPromise = ensureHttpuvServiceWorker().then(() => undefined);
+  }
+  return httpuvReadyPromise;
 }
 
-installHttpuvServiceWorkerListener();
-void ensureHttpuvServiceWorker();
+void ensureHttpuvReady();
 
 navigator.serviceWorker.addEventListener("controllerchange", () => {
-  navigator.serviceWorker.controller?.postMessage({ type: MSG.REGISTER_HOST });
+  announceHostToServiceWorker();
 });
+
+globalThis.__shinyForge = {
+  shinyUrl: (subpath = "") => shinyAppUrl(subpath),
+  ensureHttpuvReady,
+};
 
 function rEnv() {
   return {
@@ -236,6 +241,7 @@ async function initRModule() {
       wasmBinary,
       locateFile,
       ENV: rEnv(),
+      httpuv: globalThis.Module?.httpuv,
       preRun: [() => writeCachedTree(globalThis.Module)],
       onRuntimeInitialized() {
         // Re-mount after FS.init() (runs in initRuntime between preRun and here).

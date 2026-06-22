@@ -1,8 +1,10 @@
 import {
   MSG,
   REQUEST_TIMEOUT_MS,
-  SHINY_PREFIX,
 } from "./httpuv-constants.js";
+import { resolveShinyPrefix } from "./httpuv-prefix.js";
+
+const SHINY_PREFIX = resolveShinyPrefix(import.meta.url);
 
 /** @type {string | null} */
 let hostClientId = null;
@@ -18,10 +20,12 @@ const pendingHttp = new Map();
  */
 
 self.addEventListener("install", (event) => {
+  console.info("[httpuv-sw] installing, shiny prefix:", SHINY_PREFIX);
   event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
+  console.info("[httpuv-sw] activated, shiny prefix:", SHINY_PREFIX);
   event.waitUntil(self.clients.claim());
 });
 
