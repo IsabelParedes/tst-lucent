@@ -1,3 +1,5 @@
+import { MSG } from "./httpuv-constants.js";
+
 const WASM_R_HOME = "/R_HOME";
 
 // Build-time-only files; set LD_LIBRARY_PATH via ENV instead of mounting ldpaths.
@@ -13,6 +15,75 @@ const manifestUrl = new URL("R_HOME-manifest.json", import.meta.url);
 const fileCache = new Map();
 /** @type {Promise<any> | null} */
 let rModulePromise = null;
+/** @type {Promise<ServiceWorkerRegistration | null> | null} */
+let swRegistrationPromise = null;
+
+/**
+ * Register the httpuv service worker and announce this page as the WASM host.
+ * @returns {Promise<ServiceWorkerRegistration | null>}
+ */
+async function registerHttpuvServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    console.warn("[httpuv] Service workers are not supported in this browser");
+    return null;
+  }
+
+  const reg = await navigator.serviceWorker.register(new URL("./httpuv-sw.js", import.meta.url), {
+    type: "module",
+  });
+  await navigator.serviceWorker.ready;
+
+  const worker = reg.active ?? reg.installing ?? reg.waiting;
+  worker?.postMessage({ type: MSG.REGISTER_HOST });
+  console.info("[httpuv] Service worker registered");
+  return reg;
+}
+
+function ensureHttpuvServiceWorker() {
+  if (!swRegistrationPromise) {
+    swRegistrationPromise = registerHttpuvServiceWorker();
+  }
+  return swRegistrationPromise;
+}
+
+/**
+ * Placeholder handler until httpuv-bridge.js is wired (plan step 1.2).
+ * Routes SW fetch requests back with a 503 until R httpuv is ready.
+ */
+function installHttpuvServiceWorkerListener() {
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    const msg = event.data;
+    if (!msg || msg.type !== MSG.HTTP_REQUEST) {
+      return;
+    }
+
+    console.info("[httpuv] received httpuv_http_request", {
+      uuid: msg.uuid,
+      method: msg.method,
+      url: msg.url,
+    });
+
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) {
+      return;
+    }
+
+    controller.postMessage({
+      type: MSG.HTTP_RESPONSE,
+      uuid: msg.uuid,
+      status: 503,
+      headers: { "Content-Type": "text/plain" },
+      body: "httpuv bridge not initialized",
+    });
+  });
+}
+
+installHttpuvServiceWorkerListener();
+void ensureHttpuvServiceWorker();
+
+navigator.serviceWorker.addEventListener("controllerchange", () => {
+  navigator.serviceWorker.controller?.postMessage({ type: MSG.REGISTER_HOST });
+});
 
 function rEnv() {
   return {
