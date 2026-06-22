@@ -171,6 +171,8 @@ navigator.serviceWorker.addEventListener("controllerchange", () => {
 globalThis.__shinyForge = {
   shinyUrl: (subpath = "") => shinyAppUrl(subpath),
   ensureHttpuvReady,
+  showPreviewInIframe,
+  stopPreviewApp,
   /** Open a virtual socket and send one message (tests session fetch API). */
   async testVirtualSocket(message = '{"method":"ping"}') {
     await ensureHttpuvReady();
@@ -403,6 +405,36 @@ async function ensureRModule() {
   return rModulePromise;
 }
 
+function getPreviewFrame() {
+  return document.getElementById("app-frame");
+}
+
+/**
+ * Tear down the previous preview run (iframe + pending httpuv requests).
+ */
+export function stopPreviewApp() {
+  const frame = getPreviewFrame();
+  if (frame) {
+    frame.src = "about:blank";
+  }
+  navigator.serviceWorker.controller?.postMessage({ type: MSG.STOP });
+  console.info("[runApp] Preview stopped");
+}
+
+/**
+ * Point the preview iframe at the virtual Shiny app URL.
+ * @returns {string} URL loaded into the iframe
+ */
+export function showPreviewInIframe() {
+  const frame = getPreviewFrame();
+  const url = shinyAppUrl();
+  if (frame) {
+    frame.src = url;
+  }
+  console.info("[runApp] Preview iframe →", url);
+  return url;
+}
+
 export async function runApp(code) {
   const trimmed = code.trim();
   if (!trimmed) {
@@ -426,6 +458,9 @@ document.getElementById("run-button")?.addEventListener("click", async () => {
 
   button.disabled = true;
   try {
+    await ensureHttpuvReady();
+    stopPreviewApp();
+    showPreviewInIframe();
     await runApp(code);
   } catch (err) {
     console.error("[runApp] Failed:", err);
