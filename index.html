@@ -12,7 +12,7 @@
     <main class="app-layout">
       <section class="editor-panel" aria-label="App source code">
         <div class="editor-toolbar">
-          <label class="editor-label" for="app-code">app.R</label>
+          <label class="editor-label" for="app-code">webApp/app.R</label>
           <button type="button" id="run-button" class="run-button" aria-label="Run app">
             ▶
           </button>
@@ -21,22 +21,42 @@
           id="app-code"
           class="editor-input"
           spellcheck="false"
-        >library(shiny)
+        >
+library(shiny)
 
-ui &lt;- fluidPage(
-  titlePanel("Hello Shiny!")
+ui <- fluidPage(
+  titlePanel("Hello Shiny!"),
+  sidebarLayout(
+    sidebarPanel(
+      numericInput(
+        inputId = "num",
+        label = "Number of observations",
+        value = 500,
+        min = 1,
+        max = 1000
+      )
+    ),
+    mainPanel(
+      plotOutput("distPlot")
+    )
+  )
 )
 
-server &lt;- function(input, output) {}
+server <- function(input, output) {
+  output$distPlot <- renderPlot({
+    hist(rnorm(input$num))
+  })
+}
 
-shinyApp(ui, server, options = list(launch.browser = FALSE))</textarea>
+shinyApp(ui, server)
+</textarea>
       </section>
 
-      <section class="viewer-panel" aria-label="App preview">
+      <section class="viewer-panel" aria-label="Viewer">
         <iframe
           id="app-frame"
           class="app-frame"
-          title="Shiny app"
+          title="Viewer"
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         ></iframe>
       </section>

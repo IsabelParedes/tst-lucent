@@ -1,26 +1,24 @@
 import { MSG } from "./httpuv-constants.js";
-import { installHttpuvBridge } from "./httpuv-bridge.js";
+import { connectHttpuvComlink } from "./httpuv-comlink-setup.js";
 import { resolveShinyPrefix, setShinyPrefix, shinyAppUrl } from "./httpuv-prefix.js";
+import { RWASM } from "./rwasm-constants.js";
 
-const WASM_R_HOME = "/R_HOME";
+const RUN_WEB_APP_R = `shiny_forge_start_app("webApp")`;
 
-// Build-time-only files; set LD_LIBRARY_PATH via ENV instead of mounting ldpaths.
-const VFS_SKIP = new Set([`${WASM_R_HOME}/etc/ldpaths`, `${WASM_R_HOME}/etc/Makeconf`]);
-
-const glueUrl = new URL("R", import.meta.url);
-const wasmUrl = new URL("R.wasm", import.meta.url);
-const rHomeUrl = new URL("R_HOME/", import.meta.url);
-const rLibUrl = new URL("R_HOME/lib/", import.meta.url);
-const manifestUrl = new URL("R_HOME-manifest.json", import.meta.url);
-
-/** @type {Map<string, Uint8Array>} */
-const fileCache = new Map();
-/** @type {Promise<any> | null} */
-let rModulePromise = null;
+/** @type {Worker | null} */
+let rWorker = null;
+/** @type {Promise<Worker> | null} */
+let rWorkerPromise = null;
+/** @type {boolean} */
+let comlinkConnected = false;
+/** @type {Promise<void> | null} */
+let comlinkPromise = null;
 /** @type {Promise<ServiceWorkerRegistration | null> | null} */
 let swRegistrationPromise = null;
 /** @type {Promise<void> | null} */
 let httpuvReadyPromise = null;
+/** @type {number} */
+let evalSeq = 0;
 
 const HTTPUV_SW_RELOAD_KEY = "httpuv-sw-reload";
 
@@ -37,7 +35,6 @@ function announceHostToServiceWorker() {
 }
 
 /**
- * Wait until navigator.serviceWorker.controller is set (optional, non-fatal).
  * @param {number} timeoutMs
  */
 async function waitForServiceWorkerController(timeoutMs = 3_000) {
@@ -94,10 +91,6 @@ async function waitForWorkerActivated(reg) {
   });
 }
 
-/**
- * Register the httpuv service worker and announce this page as the WASM host.
- * @returns {Promise<ServiceWorkerRegistration | null>}
- */
 async function registerHttpuvServiceWorker() {
   if (!("serviceWorker" in navigator)) {
     console.warn("[httpuv] Service workers are not supported in this browser");
@@ -148,32 +141,140 @@ function ensureHttpuvServiceWorker() {
 }
 
 /**
- * Wait until the httpuv bridge and service worker are ready.
+ * @param {Worker} worker
+ * @param {object} msg
+ * @param {Transferable[]} [transfer]
+ * @returns {Promise<object>}
+ */
+function postToRWorker(worker, msg, transfer = []) {
+  const id = msg.id ?? `m${++evalSeq}`;
+  const payload = { ...msg, id };
+
+  return new Promise((resolve, reject) => {
+    /** @param {MessageEvent} event */
+    const onMessage = (event) => {
+      const data = event.data;
+      if (!data || data.id !== id) {
+        if (data?.type === RWASM.LOG) {
+          const fn = data.level === "error" ? console.error : console.log;
+          fn(`[rWasmWorker] ${data.text}`);
+        }
+        if (data?.type === RWASM.ERROR && !msg.id) {
+          worker.removeEventListener("message", onMessage);
+          reject(new Error(data.message ?? "R worker failed"));
+        }
+        return;
+      }
+
+      if (data.type === RWASM.EVAL_RESULT) {
+        worker.removeEventListener("message", onMessage);
+        if (data.ok) {
+          resolve(data);
+        } else {
+          reject(new Error(data.error ?? "eval failed"));
+        }
+      }
+    };
+
+    worker.addEventListener("message", onMessage);
+    worker.postMessage(payload, transfer);
+  });
+}
+
+/**
+ * @returns {Promise<Worker>}
+ */
+function createRWorker() {
+  const worker = new Worker(new URL("./rWasmWorker.js", import.meta.url), { type: "module" });
+
+  return new Promise((resolve, reject) => {
+    /** @param {MessageEvent} event */
+    const onBoot = (event) => {
+      const data = event.data;
+      if (data?.type === RWASM.LOG) {
+        const fn = data.level === "error" ? console.error : console.log;
+        fn(`[rWasmWorker] ${data.text}`);
+        return;
+      }
+      if (data?.type === RWASM.READY) {
+        worker.removeEventListener("message", onBoot);
+        console.info("[runApp] R.wasm worker ready");
+        resolve(worker);
+        return;
+      }
+      if (data?.type === RWASM.ERROR) {
+        worker.removeEventListener("message", onBoot);
+        reject(new Error(data.message ?? "R worker bootstrap failed"));
+      }
+    };
+
+    worker.addEventListener("message", onBoot);
+    worker.addEventListener("error", (event) => {
+      worker.removeEventListener("message", onBoot);
+      const detail = [event.message, event.filename, event.lineno].filter(Boolean).join(" ");
+      reject(new Error(detail ? `R worker failed to load: ${detail}` : "R worker failed to load"));
+    });
+  });
+}
+
+async function ensureRWorker() {
+  if (rWorker) {
+    return rWorker;
+  }
+  if (!rWorkerPromise) {
+    rWorkerPromise = createRWorker().then((worker) => {
+      rWorker = worker;
+      return worker;
+    });
+  }
+  return rWorkerPromise;
+}
+
+async function ensureComlinkConnected() {
+  if (comlinkConnected && comlinkPromise) {
+    return comlinkPromise;
+  }
+
+  comlinkPromise = (async () => {
+    const worker = await ensureRWorker();
+    await ensureHttpuvServiceWorker();
+    if (!navigator.serviceWorker.controller) {
+      throw new Error("Service worker controller is not available");
+    }
+    await connectHttpuvComlink(worker);
+    comlinkConnected = true;
+  })();
+
+  return comlinkPromise;
+}
+
+/**
  * @returns {Promise<void>}
  */
 export async function ensureHttpuvReady() {
   if (!httpuvReadyPromise) {
     setShinyPrefix(resolveShinyPrefix(import.meta.url));
-    installHttpuvBridge();
-    httpuvReadyPromise = ensureHttpuvServiceWorker().then(() => undefined);
+    httpuvReadyPromise = ensureComlinkConnected();
   }
   return httpuvReadyPromise;
 }
 
-void ensureHttpuvReady().catch((err) => {
-  console.error("[httpuv] Failed to initialize:", err);
-});
-
 navigator.serviceWorker.addEventListener("controllerchange", () => {
   announceHostToServiceWorker();
+  if (!comlinkConnected) {
+    return;
+  }
+  comlinkConnected = false;
+  comlinkPromise = null;
+  void ensureComlinkConnected().catch((err) => {
+    console.error("[httpuv] Comlink reconnect failed:", err);
+  });
 });
 
 globalThis.__shinyForge = {
   shinyUrl: (subpath = "") => shinyAppUrl(subpath),
   ensureHttpuvReady,
-  showPreviewInIframe,
-  stopPreviewApp,
-  /** Open a virtual socket and send one message (tests session fetch API). */
+  stopRunningApp,
   async testVirtualSocket(message = '{"method":"ping"}') {
     await ensureHttpuvReady();
     if (!navigator.serviceWorker.controller) {
@@ -211,260 +312,88 @@ globalThis.__shinyForge = {
   },
 };
 
-function rEnv() {
-  return {
-    R_HOME: WASM_R_HOME,
-    R_DEFAULT_PACKAGES: "NULL",
-    R_LIBS: `${WASM_R_HOME}/library`,
-    R_LIBS_USER: "NULL",
-    R_LIBS_SITE: "NULL",
-    LD_LIBRARY_PATH: `${WASM_R_HOME}/lib:/lib`,
-  };
+function stopWasmPump(worker) {
+  worker.postMessage({ type: RWASM.PUMP_STOP });
 }
 
-function dstToFetchUrl(dst) {
-  const prefix = `${WASM_R_HOME}/`;
-  if (dst.startsWith(prefix)) {
-    return new URL(dst.slice(prefix.length), rHomeUrl).href;
-  }
-  if (dst.startsWith("/lib/")) {
-    return new URL(dst.slice(5), rLibUrl).href;
-  }
-  throw new Error(`Unknown mount path: ${dst}`);
+function startWasmPump(worker) {
+  worker.postMessage({ type: RWASM.PUMP_START });
+  console.info("[runApp] WASM event pump started (worker)");
 }
 
-async function mountRHome() {
-  if (fileCache.size > 0) {
-    return;
-  }
-
-  const res = await fetch(manifestUrl);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch ${manifestUrl.href}: HTTP ${res.status}`);
-  }
-  const { files } = await res.json();
-  console.info("[runApp] Mounting", files.length, "files from manifest");
-
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: 32 }, async () => {
-      while (next < files.length) {
-        const dst = files[next++];
-        if (VFS_SKIP.has(dst)) {
-          continue;
-        }
-        const fileRes = await fetch(dstToFetchUrl(dst));
-        if (!fileRes.ok) {
-          throw new Error(`Failed to fetch ${dstToFetchUrl(dst)}: HTTP ${fileRes.status}`);
-        }
-        fileCache.set(dst, new Uint8Array(await fileRes.arrayBuffer()));
-      }
-    })
-  );
-
-  console.info("[runApp] Cached", fileCache.size, "files");
-}
-
-function writeCachedTree(module) {
-  for (const path of fileCache.keys()) {
-    const parent = path.substring(0, path.lastIndexOf("/"));
-    if (parent) {
-      module.FS.mkdirTree(parent);
-    }
-  }
-  for (const [path, data] of fileCache) {
-    module.FS.writeFile(path, data);
-  }
-}
-
-function verifyMountedTree(module) {
-  const methodsSo = `${WASM_R_HOME}/library/methods/libs/methods.so`;
-  const info = module.FS.analyzePath(methodsSo);
-  if (!info.exists) {
-    throw new Error(`Mounted FS is missing ${methodsSo}`);
-  }
-  const data = module.FS.readFile(methodsSo, { encoding: "binary" });
-  if (!(data[0] === 0 && data[1] === 97 && data[2] === 115 && data[3] === 109)) {
-    throw new Error(`${methodsSo} is not a wasm module (bad magic bytes)`);
-  }
-}
-
-function locateFile(file) {
-  const base = file.split("/").pop();
-  if (base.endsWith(".wasm")) {
-    return new URL("R.wasm", import.meta.url).href;
-  }
-  // Package dynlib path, e.g. /R_HOME/library/methods/libs/methods.so
-  const pkgMatch = file.match(/\/library\/([^/]+)\/libs\/([^/]+)$/);
-  if (pkgMatch) {
-    return new URL(`R_HOME/library/${pkgMatch[1]}/libs/${pkgMatch[2]}`, import.meta.url).href;
-  }
-  // Core R shared libs (libR.so, libRblas.so, …)
-  return new URL(`R_HOME/lib/${base}`, import.meta.url).href;
-}
-
-async function loadGlue() {
-  let glue = await fetch(glueUrl).then((res) => {
-    if (!res.ok) {
-      throw new Error(`Failed to fetch ${glueUrl.href}: HTTP ${res.status}`);
-    }
-    return res.text();
-  });
-
-  const env = rEnv();
-  const envLiteral = JSON.stringify(env);
-  glue = glue.replace("var ENV={};", `var ENV=${envLiteral};`);
-  glue = glue.replace(
-    "var Module=typeof Module!=\"undefined\"?Module:{};",
-    "var Module=globalThis.Module;"
-  );
-  glue = glue.replace(
-    'env={USER:"web_user",LOGNAME:"web_user",PATH:"/",PWD:"/",HOME:"/home/web_user",LANG:lang,_:getExecutableName()};',
-    `env={R_HOME:"${env.R_HOME}",R_LIBS:"${env.R_LIBS}",R_LIBS_USER:"${env.R_LIBS_USER}",R_LIBS_SITE:"${env.R_LIBS_SITE}",LD_LIBRARY_PATH:"${env.LD_LIBRARY_PATH}",USER:"web_user",LOGNAME:"web_user",PATH:"/",PWD:"/",HOME:"/home/web_user",LANG:lang,_:getExecutableName()};`
-  );
-  glue = glue.replace(
-    'Module["callMain"]=callMain;',
-    `Module["loadDynamicLibraryAsync"]=(name)=>loadDynamicLibrary(name,{loadAsync:true,global:true,nodelete:true,allowUndefined:true});
-Module["callMain"]=callMain;`
-  );
-  return glue;
-}
-
-async function preloadWasmSideModules(module) {
-  const libR = `${WASM_R_HOME}/lib/libR.so`;
-  const paths = [...fileCache.keys()].filter((p) => p.endsWith(".so"));
-  const ordered = [
-    ...paths.filter((p) => p === libR),
-    ...paths.filter((p) => p !== libR).sort(),
-  ];
-  console.info("[runApp] Preloading", ordered.length, "WASM side modules");
-  for (const path of ordered) {
-    await module.loadDynamicLibraryAsync(path);
-  }
-}
-
-async function initRModule() {
-  await mountRHome();
-
-  const [glue, wasmBinary] = await Promise.all([
-    loadGlue(),
-    fetch(wasmUrl).then((res) => {
-      if (!res.ok) {
-        throw new Error(`Failed to fetch ${wasmUrl.href}: HTTP ${res.status}`);
-      }
-      return res.arrayBuffer();
-    }),
-  ]);
-
-  return new Promise((resolve, reject) => {
-    globalThis.Module = {
-      noInitialRun: true,
-      wasmBinary,
-      locateFile,
-      ENV: rEnv(),
-      httpuv: globalThis.Module?.httpuv,
-      preRun: [() => writeCachedTree(globalThis.Module)],
-      onRuntimeInitialized() {
-        // Re-mount after FS.init() (runs in initRuntime between preRun and here).
-        writeCachedTree(globalThis.Module);
-        try {
-          verifyMountedTree(globalThis.Module);
-        } catch (err) {
-          reject(err);
-          return;
-        }
-        // dlopen() sync-compiles side modules; libR.so is >8MB and fails on the
-        // main thread unless we async-instantiate everything first.
-        preloadWasmSideModules(globalThis.Module)
-          .then(() => resolve(globalThis.Module))
-          .catch(reject);
-      },
-      onAbort(reason) {
-        reject(new Error(`R.wasm aborted: ${reason}`));
-      },
-      print(text) {
-        console.log(String(text));
-      },
-      printErr(text) {
-        console.error(String(text));
-      },
-    };
-
-    try {
-      globalThis.eval(glue);
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
-
-async function ensureRModule() {
-  if (!rModulePromise) {
-    rModulePromise = initRModule();
-  }
-  return rModulePromise;
-}
-
-function getPreviewFrame() {
-  return document.getElementById("app-frame");
-}
-
-/**
- * Tear down the previous preview run (iframe + pending httpuv requests).
- */
-export function stopPreviewApp() {
-  const frame = getPreviewFrame();
-  if (frame) {
-    frame.src = "about:blank";
-  }
+export function stopRunningApp() {
   navigator.serviceWorker.controller?.postMessage({ type: MSG.STOP });
-  console.info("[runApp] Preview stopped");
+
+  if (rWorker) {
+    stopWasmPump(rWorker);
+    rWorker.postMessage({ type: RWASM.STOP_APP });
+  }
+  console.info("[runApp] App stopped");
 }
 
-/**
- * Point the preview iframe at the virtual Shiny app URL.
- * @returns {string} URL loaded into the iframe
- */
-export function showPreviewInIframe() {
-  const frame = getPreviewFrame();
+function loadViewerFrame() {
+  const frame = document.getElementById("app-frame");
   const url = shinyAppUrl();
   if (frame) {
     frame.src = url;
   }
-  console.info("[runApp] Preview iframe →", url);
-  return url;
+  console.info("[runApp] Viewer iframe →", url);
 }
 
 export async function runApp(code) {
   const trimmed = code.trim();
   if (!trimmed) {
     console.warn("[runApp] No R code to run");
-    return;
+    return 1;
   }
 
-  const Module = await ensureRModule();
-  // Avoid --vanilla so /R_HOME/etc/Rprofile.site runs before default packages
-  // (needed to bind methods.so native symbols such as C_R_initMethodDispatch).
-  const rArgs = ["--no-restore", "--no-save", "-e", trimmed];
-  console.info("[runApp] callMain", rArgs.slice(0, 3).concat(["-e", code]));
-  const status = Module.callMain(rArgs);
-  console.info("[runApp] callMain finished with status", status);
-  return status;
+  const worker = await ensureRWorker();
+
+  worker.postMessage({ type: RWASM.STOP_APP });
+
+  await postToRWorker(worker, {
+    type: RWASM.WRITE_WEB_APP,
+    source: trimmed,
+  });
+
+  console.info("[runApp] worker eval", RUN_WEB_APP_R);
+  await postToRWorker(worker, {
+    type: RWASM.EVAL,
+    code: RUN_WEB_APP_R,
+  });
+  startWasmPump(worker);
+
+  return 0;
+}
+
+function getEditorCode() {
+  return document.getElementById("app-code")?.value ?? "";
+}
+
+/**
+ * @param {{ stopFirst?: boolean }} [options]
+ */
+async function runEditorApp(options = {}) {
+  await ensureHttpuvReady();
+  if (options.stopFirst) {
+    stopRunningApp();
+  }
+  await runApp(getEditorCode());
+  loadViewerFrame();
 }
 
 document.getElementById("run-button")?.addEventListener("click", async () => {
   const button = document.getElementById("run-button");
-  const code = document.getElementById("app-code")?.value ?? "";
-
   button.disabled = true;
   try {
-    await ensureHttpuvReady();
-    stopPreviewApp();
-    showPreviewInIframe();
-    await runApp(code);
+    await runEditorApp({ stopFirst: true });
   } catch (err) {
     console.error("[runApp] Failed:", err);
   } finally {
     button.disabled = false;
   }
+});
+
+void runEditorApp().catch((err) => {
+  console.error("[runApp] Failed to start:", err);
 });

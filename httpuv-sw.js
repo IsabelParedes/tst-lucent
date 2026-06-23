@@ -4,6 +4,8 @@ import {
   SESSION_RECV_TIMEOUT_MS,
   WS_FRAME,
 } from "./httpuv-constants.js";
+import { COMLINK } from "./httpuv-comlink.js";
+import { Comlink, createSwDeliveryApi } from "./httpuv-comlink-setup.js";
 import { parseSessionAction, resolveSessionPrefix, resolveShinyPrefix, isHostPushUrl } from "./httpuv-prefix.js";
 
 const SHINY_PREFIX = resolveShinyPrefix(import.meta.url);
@@ -11,6 +13,9 @@ const SESSION_PREFIX = resolveSessionPrefix(import.meta.url);
 
 /** @type {string | null} */
 let hostClientId = null;
+
+/** @type {import('comlink').Remote<{ deliverHttpRequest: Function, stop: Function }> | null} */
+let rwasmHost = null;
 
 /** @type {Map<string, { resolve: (resp: PendingResponse) => void, reject: (err: Error) => void, timer: ReturnType<typeof setTimeout> }>} */
 const pendingHttp = new Map();
@@ -239,18 +244,12 @@ async function handleHostPush(event) {
 async function handleShinyFetch(event) {
   const request = event.request;
   const uuid = crypto.randomUUID();
-  const hostClient = await getHostClient();
 
-  if (!hostClient) {
-    return new Response("Shiny host page is not ready", {
+  if (!rwasmHost) {
+    return new Response("Shiny R worker is not ready", {
       status: 503,
       headers: { "Content-Type": "text/plain" },
     });
-  }
-
-  if (!hostClientId && "id" in hostClient) {
-    hostClientId = hostClient.id;
-    console.info("[httpuv-sw] Discovered host client", hostClientId);
   }
 
   const body =
@@ -260,18 +259,26 @@ async function handleShinyFetch(event) {
 
   const responsePromise = waitForHttpResponse(uuid);
 
-  hostClient.postMessage(
-    {
-      type: MSG.HTTP_REQUEST,
-      uuid,
-      method: request.method,
-      url: request.url,
-      headers: await headersToObject(request),
-      body,
-      clientId: event.clientId,
-    },
-    body ? [body] : [],
-  );
+  const payload = {
+    uuid,
+    method: request.method,
+    url: request.url,
+    headers: await headersToObject(request),
+    body,
+    clientId: event.clientId,
+  };
+
+  try {
+    await rwasmHost.deliverHttpRequest(
+      body ? Comlink.transfer(payload, [body]) : payload,
+    );
+  } catch (err) {
+    console.error("[httpuv-sw] R worker request failed", err);
+    return new Response("Bad Gateway", {
+      status: 502,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
 
   try {
     const resp = await responsePromise;
@@ -307,7 +314,26 @@ self.addEventListener("fetch", (event) => {
 
 self.addEventListener("message", (event) => {
   const msg = event.data;
-  if (!msg || typeof msg !== "object" || typeof msg.type !== "string") {
+  if (!msg || typeof msg !== "object") {
+    return;
+  }
+
+  if (msg.type === COMLINK.PORT_HANDOFF && event.ports[0]) {
+    const port = event.ports[0];
+    port.start();
+    if (msg.role === COMLINK.ROLE.R_HOST) {
+      rwasmHost = Comlink.wrap(port);
+      console.info("[httpuv-sw] Comlink: connected to R host");
+      return;
+    }
+    if (msg.role === COMLINK.ROLE.SW_DELIVERY) {
+      Comlink.expose(createSwDeliveryApi(handleHostOutboundMessage), port);
+      console.info("[httpuv-sw] Comlink: exposing delivery API");
+      return;
+    }
+  }
+
+  if (typeof msg.type !== "string") {
     return;
   }
 
@@ -345,6 +371,11 @@ self.addEventListener("message", (event) => {
       pendingRecv.clear();
       queuedWsPush.clear();
       hostClientId = null;
+      if (rwasmHost) {
+        void rwasmHost.stop().catch((err) => {
+          console.warn("[httpuv-sw] R worker stop failed", err);
+        });
+      }
       break;
     }
 

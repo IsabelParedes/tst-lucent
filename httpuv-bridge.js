@@ -231,62 +231,103 @@ function getServiceWorkerController() {
 }
 
 /**
- * @param {object} msg
+ * @param {ArrayBuffer | null | undefined} body
+ * @returns {number[] | null}
  */
-async function postToServiceWorker(msg) {
-  const controller = getServiceWorkerController();
+function serializeBodyForChannel(body) {
+  if (!body) {
+    return null;
+  }
+  return Array.from(new Uint8Array(body));
+}
+
+/**
+ * @param {object} msg
+ * @param {(outbound: object, transfer?: Transferable[]) => void} deliver
+ */
+function formatOutboundForHost(msg, deliver) {
   const body = encodeResponseBody(
     msg.type === CHANNEL.TCP_RESPONSE ? msg.data?.body : msg.data?.message,
   );
   const transfer = body instanceof ArrayBuffer ? [body] : [];
 
   if (msg.type === CHANNEL.TCP_RESPONSE) {
-    const outbound = {
-      type: MSG.HTTP_RESPONSE,
-      uuid: msg.uuid,
-      status: msg.data?.status ?? 500,
-      headers: normalizeHeaders(msg.data?.headers),
-      body,
-    };
-    if (controller) {
-      controller.postMessage(outbound, transfer);
-      return;
-    }
-    await fetch(shinyAppUrl("__host__/push"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(outbound),
-    });
+    deliver(
+      {
+        type: MSG.HTTP_RESPONSE,
+        uuid: msg.uuid,
+        status: msg.data?.status ?? 500,
+        headers: normalizeHeaders(msg.data?.headers),
+        body,
+      },
+      transfer,
+    );
     return;
   }
 
   if (msg.type === CHANNEL.WS_RESPONSE) {
-    const outbound = {
-      type: MSG.WS_PUSH,
-      handle: msg.data?.handle,
-      binary: msg.data?.binary ?? false,
-      wsType: msg.data?.type ?? WS_FRAME.SEND,
-      message: body,
-    };
-    if (controller) {
-      controller.postMessage(outbound, transfer);
-      return;
-    }
-    await fetch(shinyAppUrl("__host__/push"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...outbound,
-        message: typeof body === "string" ? body : undefined,
-      }),
-    });
+    deliver(
+      {
+        type: MSG.WS_PUSH,
+        handle: msg.data?.handle,
+        binary: msg.data?.binary ?? false,
+        wsType: msg.data?.type ?? WS_FRAME.SEND,
+        message: body,
+      },
+      transfer,
+    );
   }
 }
 
 /**
+ * @param {object} msg
+ */
+async function postToServiceWorker(msg) {
+  const controller = getServiceWorkerController();
+  formatOutboundForHost(msg, (outbound, transfer = []) => {
+    if (msg.type === CHANNEL.TCP_RESPONSE) {
+      if (controller) {
+        controller.postMessage(outbound, transfer);
+        return;
+      }
+      void fetch(shinyAppUrl("__host__/push"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(outbound),
+      });
+      return;
+    }
+
+    if (msg.type === CHANNEL.WS_RESPONSE) {
+      if (controller) {
+        controller.postMessage(outbound, transfer);
+        return;
+      }
+      void fetch(shinyAppUrl("__host__/push"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...outbound,
+          message: typeof outbound.message === "string" ? outbound.message : undefined,
+        }),
+      });
+    }
+  });
+}
+
+/** @type {((msg: object, transfer?: Transferable[]) => void) | null} */
+let postOutbound = null;
+
+/**
  * @param {ChannelMessage} msg
  */
-function postToServiceWorkerSync(msg) {
+function postOutboundSync(msg) {
+  if (postOutbound) {
+    formatOutboundForHost(msg, (outbound, transfer = []) => {
+      postOutbound(outbound, transfer);
+    });
+    return;
+  }
   void postToServiceWorker(msg);
 }
 
@@ -311,7 +352,7 @@ function createChannel() {
         msg.type === CHANNEL.TCP_RESPONSE ||
         msg.type === CHANNEL.WS_RESPONSE
       ) {
-        postToServiceWorkerSync(msg);
+        postOutboundSync(msg);
         return;
       }
       inbox.push(msg);
@@ -412,62 +453,81 @@ function ensureModuleHttpuv() {
   return globalThis.Module.httpuv;
 }
 
+/**
+ * Handle an inbound message from the service worker (or a host proxy).
+ * @param {object} msg
+ */
+export function handleInboundHostMessage(msg) {
+  if (!msg || typeof msg !== "object") {
+    return;
+  }
+
+  const channel = getChannel();
+
+  switch (msg.type) {
+    case MSG.HTTP_REQUEST: {
+      const session = parseSessionAction(msg.url, getShinyPrefix());
+      if (session && session.action !== "recv") {
+        console.info("[httpuv-bridge] inbound session request", {
+          uuid: msg.uuid,
+          action: session.action,
+          handle: session.handle,
+        });
+        handleSessionHttp(msg, session);
+        break;
+      }
+
+      console.info("[httpuv-bridge] inbound http request", {
+        uuid: msg.uuid,
+        method: msg.method,
+        url: msg.url,
+      });
+      channel.write({
+        type: CHANNEL.HTTP_REQUEST,
+        uuid: msg.uuid,
+        method: msg.method,
+        url: msg.url,
+        headers: msg.headers ?? {},
+        body: serializeBodyForChannel(msg.body),
+        clientId: msg.clientId,
+      });
+      break;
+    }
+
+    case MSG.STOP: {
+      channel.inbox.length = 0;
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
 function installServiceWorkerListener() {
   navigator.serviceWorker.addEventListener("message", (event) => {
-    const msg = event.data;
-    if (!msg || typeof msg !== "object") {
-      return;
-    }
-
-    const channel = getChannel();
-
-    switch (msg.type) {
-      case MSG.HTTP_REQUEST: {
-        const session = parseSessionAction(msg.url, getShinyPrefix());
-        if (session && session.action !== "recv") {
-          console.info("[httpuv-bridge] inbound session request", {
-            uuid: msg.uuid,
-            action: session.action,
-            handle: session.handle,
-          });
-          handleSessionHttp(msg, session);
-          break;
-        }
-
-        console.info("[httpuv-bridge] inbound http request", {
-          uuid: msg.uuid,
-          method: msg.method,
-          url: msg.url,
-        });
-        channel.write({
-          type: CHANNEL.HTTP_REQUEST,
-          uuid: msg.uuid,
-          method: msg.method,
-          url: msg.url,
-          headers: msg.headers ?? {},
-          body: msg.body ?? null,
-          clientId: msg.clientId,
-        });
-        drainInboundChannel();
-        break;
-      }
-
-      case MSG.STOP: {
-        channel.inbox.length = 0;
-        break;
-      }
-
-      default:
-        break;
-    }
+    handleInboundHostMessage(event.data);
   });
 }
 
 /**
- * Install Module.httpuv (channel + dispatch) and wire the service worker listener.
- * Call before WASM R starts.
+ * @typedef {object} HttpuvBridgeOptions
+ * @property {((outbound: object, transfer?: Transferable[]) => void)} [postOutbound]
+ *   Deliver HTTP/WS responses to the host (main page → service worker).
+ * @property {boolean} [installSwListener=true]
+ *   Listen for service worker messages in this context (false in the R worker).
  */
-export function installHttpuvBridge() {
+
+/**
+ * Install Module.httpuv (channel + dispatch) and optionally wire the service worker listener.
+ * Call before WASM R starts.
+ * @param {HttpuvBridgeOptions} [options]
+ */
+export function installHttpuvBridge(options = {}) {
+  if (options.postOutbound) {
+    postOutbound = options.postOutbound;
+  }
+
   const httpuv = ensureModuleHttpuv();
 
   if (!httpuv.channel) {
@@ -479,6 +539,7 @@ export function installHttpuvBridge() {
   httpuv.buildReq = buildReq;
   httpuv.injectShinySocketBootstrap = injectShinySocketBootstrap;
   httpuv.shinySocketScriptUrl = shinySocketScriptUrl;
+  httpuv.shinyPrefix = getShinyPrefix();
 
   /**
    * Push a message to a virtual socket recv waiter (used by R via channel.write).
@@ -506,7 +567,8 @@ export function installHttpuvBridge() {
     invokeROption = fn;
   };
 
-  if (!httpuv._swListenerInstalled) {
+  const installSwListener = options.installSwListener ?? true;
+  if (installSwListener && !httpuv._swListenerInstalled) {
     installServiceWorkerListener();
     httpuv._swListenerInstalled = true;
   }
