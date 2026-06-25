@@ -4,6 +4,7 @@ import {
   MSG,
   WS_FRAME,
 } from "./httpuv-constants.js";
+import { httpuvDebugLog } from "./httpuv-debug.js";
 import { getShinyPrefix, parseSessionAction, shinyAppUrl } from "./httpuv-prefix.js";
 
 /** @typedef {Record<string, string>} HeaderMap */
@@ -16,13 +17,29 @@ import { getShinyPrefix, parseSessionAction, shinyAppUrl } from "./httpuv-prefix
 /** @type {((optionName: string, ...args: unknown[]) => boolean) | null} */
 let invokeROption = null;
 
+/** @type {((msg: ChannelMessage) => void) | null} */
+let pushToR = null;
+
 /**
  * @param {unknown} body
  * @returns {string | ArrayBuffer | null}
  */
+function decodeBase64Body(data) {
+  const text = String(data ?? "");
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 function encodeResponseBody(body) {
   if (body == null) {
     return null;
+  }
+  if (typeof body === "object" && !Array.isArray(body) && body.httpuvRaw === "base64") {
+    return decodeBase64Body(body.data);
   }
   if (typeof body === "string") {
     return body;
@@ -124,13 +141,54 @@ export function shinySocketScriptUrl() {
  */
 export function injectShinySocketBootstrap(html) {
   const tag = `<script type="module" src="${shinySocketScriptUrl()}"></script>`;
-  if (html.includes("</head>")) {
-    return html.replace("</head>", `  ${tag}\n</head>`);
+  if (html.includes("<head")) {
+    return html.replace(/<head([^>]*)>/, `<head$1>\n  ${tag}`);
   }
   if (html.includes("<body")) {
     return html.replace(/<body([^>]*)>/, `<body$1>\n  ${tag}`);
   }
   return `${tag}\n${html}`;
+}
+
+/**
+ * @param {unknown} body
+ * @returns {string | null}
+ */
+function bodyToText(body) {
+  if (body == null) {
+    return null;
+  }
+  if (typeof body === "string") {
+    return body;
+  }
+  if (body instanceof ArrayBuffer) {
+    return new TextDecoder().decode(body);
+  }
+  if (ArrayBuffer.isView(body)) {
+    return new TextDecoder().decode(body);
+  }
+  if (Array.isArray(body)) {
+    return new TextDecoder().decode(new Uint8Array(body));
+  }
+  return String(body);
+}
+
+/**
+ * @param {unknown} body
+ * @param {HeaderMap} headers
+ * @returns {string | ArrayBuffer | null}
+ */
+function maybeInjectShinySocketBootstrap(body, headers) {
+  const contentType =
+    Object.entries(headers).find(([key]) => key.toLowerCase() === "content-type")?.[1] ?? "";
+  if (!contentType.includes("text/html")) {
+    return encodeResponseBody(body);
+  }
+  const html = bodyToText(body);
+  if (!html) {
+    return encodeResponseBody(body);
+  }
+  return injectShinySocketBootstrap(html);
 }
 
 /**
@@ -154,14 +212,11 @@ function sessionMessageFromBody(body) {
  * @param {{ action: string, handle: string | null }} session
  */
 function handleSessionHttp(msg, session) {
-  const channel = getChannel();
-
   switch (session.action) {
     case "open": {
       const handle = crypto.randomUUID();
       const req = buildReq(msg);
-      channel.write({ type: CHANNEL.WS_OPEN, handle, req });
-      drainInboundChannel();
+      pushInboundChannelMessage({ type: CHANNEL.WS_OPEN, handle, req });
       sendTcpResponse(
         msg.uuid,
         200,
@@ -177,13 +232,12 @@ function handleSessionHttp(msg, session) {
         return;
       }
       const { binary, message } = sessionMessageFromBody(msg.body);
-      channel.write({
+      pushInboundChannelMessage({
         type: CHANNEL.WS_MESSAGE,
         handle: session.handle,
         binary,
         message,
       });
-      drainInboundChannel();
       sendTcpResponse(msg.uuid, 204, {}, null);
       break;
     }
@@ -193,12 +247,10 @@ function handleSessionHttp(msg, session) {
         sendTcpResponse(msg.uuid, 400, { "Content-Type": "text/plain" }, "missing handle");
         return;
       }
-      channel.write({
+      pushInboundChannelMessage({
         type: CHANNEL.WS_CLOSE,
         handle: session.handle,
-        body: msg.body,
       });
-      drainInboundChannel();
       sendTcpResponse(msg.uuid, 204, {}, null);
       break;
     }
@@ -246,24 +298,31 @@ function serializeBodyForChannel(body) {
  * @param {(outbound: object, transfer?: Transferable[]) => void} deliver
  */
 function formatOutboundForHost(msg, deliver) {
-  const body = encodeResponseBody(
-    msg.type === CHANNEL.TCP_RESPONSE ? msg.data?.body : msg.data?.message,
-  );
-  const transfer = body instanceof ArrayBuffer ? [body] : [];
-
   if (msg.type === CHANNEL.TCP_RESPONSE) {
+    const headers = normalizeHeaders(msg.data?.headers);
+    let body;
+    try {
+      body = maybeInjectShinySocketBootstrap(msg.data?.body, headers);
+    } catch (err) {
+      console.warn("[httpuv-bridge] shiny socket bootstrap injection failed", err);
+      body = encodeResponseBody(msg.data?.body);
+    }
+    const transfer = body instanceof ArrayBuffer ? [body] : [];
     deliver(
       {
         type: MSG.HTTP_RESPONSE,
         uuid: msg.uuid,
         status: msg.data?.status ?? 500,
-        headers: normalizeHeaders(msg.data?.headers),
+        headers,
         body,
       },
       transfer,
     );
     return;
   }
+
+  const body = encodeResponseBody(msg.data?.message);
+  const transfer = body instanceof ArrayBuffer ? [body] : [];
 
   if (msg.type === CHANNEL.WS_RESPONSE) {
     deliver(
@@ -318,6 +377,47 @@ async function postToServiceWorker(msg) {
 /** @type {((msg: object, transfer?: Transferable[]) => void) | null} */
 let postOutbound = null;
 
+/** @type {ChannelMessage[]} */
+const deferredOutbound = [];
+
+/**
+ * Deliver responses queued while evalR is active (Comlink must not run inside WASM eval).
+ */
+export function flushDeferredOutbound() {
+  if (deferredOutbound.length === 0) {
+    return;
+  }
+  const batch = deferredOutbound.splice(0, deferredOutbound.length);
+  for (const msg of batch) {
+    postOutboundSync(msg);
+  }
+}
+
+/**
+ * @param {ChannelMessage} msg
+ */
+function postOutboundMaybeDefer(msg) {
+  const depth = globalThis.Module?._rWasmEvalDepth ?? 0;
+  if (depth > 0) {
+    deferredOutbound.push(msg);
+    if (msg.type === CHANNEL.TCP_RESPONSE) {
+      httpuvDebugLog("channel-tcp-response-deferred", {
+        uuid: msg.uuid,
+        status: msg.data?.status,
+        depth,
+      });
+    }
+    return;
+  }
+  if (msg.type === CHANNEL.TCP_RESPONSE) {
+    httpuvDebugLog("channel-tcp-response", {
+      uuid: msg.uuid,
+      status: msg.data?.status,
+    });
+  }
+  postOutboundSync(msg);
+}
+
 /**
  * @param {ChannelMessage} msg
  */
@@ -352,10 +452,11 @@ function createChannel() {
         msg.type === CHANNEL.TCP_RESPONSE ||
         msg.type === CHANNEL.WS_RESPONSE
       ) {
-        postOutboundSync(msg);
+        postOutboundMaybeDefer(msg);
         return;
       }
-      inbox.push(msg);
+      console.warn("[httpuv-bridge] inbound channel.write is deprecated; use pushInboundChannelMessage", msg.type);
+      pushInboundChannelMessage(msg);
     },
   };
 }
@@ -454,15 +555,27 @@ function ensureModuleHttpuv() {
 }
 
 /**
- * Handle an inbound message from the service worker (or a host proxy).
+ * Push a channel message into R immediately (worker push path).
+ * @param {ChannelMessage} msg
+ * @returns {boolean}
+ */
+export function pushInboundChannelMessage(msg) {
+  if (!pushToR) {
+    console.warn("[httpuv-bridge] pushToR not configured");
+    return false;
+  }
+  pushToR(msg);
+  return true;
+}
+
+/**
+ * Push an inbound host message from the service worker into R.
  * @param {object} msg
  */
-export function handleInboundHostMessage(msg) {
+export function pushInboundHostMessage(msg) {
   if (!msg || typeof msg !== "object") {
     return;
   }
-
-  const channel = getChannel();
 
   switch (msg.type) {
     case MSG.HTTP_REQUEST: {
@@ -477,12 +590,12 @@ export function handleInboundHostMessage(msg) {
         break;
       }
 
-      console.info("[httpuv-bridge] inbound http request", {
+      console.info("[httpuv-bridge] push http request", {
         uuid: msg.uuid,
         method: msg.method,
         url: msg.url,
       });
-      channel.write({
+      pushInboundChannelMessage({
         type: CHANNEL.HTTP_REQUEST,
         uuid: msg.uuid,
         method: msg.method,
@@ -494,14 +607,20 @@ export function handleInboundHostMessage(msg) {
       break;
     }
 
-    case MSG.STOP: {
-      channel.inbox.length = 0;
+    case MSG.STOP:
       break;
-    }
 
     default:
       break;
   }
+}
+
+/**
+ * Handle an inbound message from the service worker (or a host proxy).
+ * @param {object} msg
+ */
+export function handleInboundHostMessage(msg) {
+  pushInboundHostMessage(msg);
 }
 
 function installServiceWorkerListener() {
@@ -516,6 +635,8 @@ function installServiceWorkerListener() {
  *   Deliver HTTP/WS responses to the host (main page → service worker).
  * @property {boolean} [installSwListener=true]
  *   Listen for service worker messages in this context (false in the R worker).
+ * @property {((msg: ChannelMessage) => void)} [pushToR]
+ *   Push inbound HTTP/WebSocket channel messages into R (R worker only).
  */
 
 /**
@@ -527,6 +648,9 @@ export function installHttpuvBridge(options = {}) {
   if (options.postOutbound) {
     postOutbound = options.postOutbound;
   }
+  if (options.pushToR) {
+    pushToR = options.pushToR;
+  }
 
   const httpuv = ensureModuleHttpuv();
 
@@ -536,6 +660,8 @@ export function installHttpuvBridge(options = {}) {
 
   httpuv.dispatch = dispatch;
   httpuv.drainInboundChannel = drainInboundChannel;
+  httpuv.pushInboundChannelMessage = pushInboundChannelMessage;
+  httpuv.pushInboundHostMessage = pushInboundHostMessage;
   httpuv.buildReq = buildReq;
   httpuv.injectShinySocketBootstrap = injectShinySocketBootstrap;
   httpuv.shinySocketScriptUrl = shinySocketScriptUrl;
@@ -582,4 +708,11 @@ export function installHttpuvBridge(options = {}) {
  */
 export function setInvokeROption(fn) {
   invokeROption = fn;
+}
+
+/**
+ * @param {((msg: ChannelMessage) => void) | null} fn
+ */
+export function setPushToR(fn) {
+  pushToR = fn;
 }

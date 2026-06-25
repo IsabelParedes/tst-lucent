@@ -4,8 +4,8 @@ export const WS_FRAME = {
   CLOSE: "websocket.close",
 };
 
-/** Max time the service worker waits for the main page to answer a request. */
-export const REQUEST_TIMEOUT_MS = 30_000;
+/** Max time the service worker waits for the R worker to answer a request. */
+export const REQUEST_TIMEOUT_MS = 180_000;
 
 /** Max time a session recv long-poll waits before returning 204. */
 export const SESSION_RECV_TIMEOUT_MS = 25_000;
@@ -17,7 +17,16 @@ export const MSG = {
   HTTP_RESPONSE: "httpuv_http_response",
   WS_PUSH: "httpuv_ws_push",
   STOP: "httpuv_stop",
+  /** Drop cached GET /shiny/ without tearing down the R worker (app restart). */
+  CLEAR_APP_CACHE: "httpuv_clear_app_cache",
+  /** Ask the SW to refresh shiny::resourcePaths() from the R worker. */
+  SYNC_RESOURCE_PATHS: "httpuv_sync_resource_paths",
+  /** R worker → SW mapping of addResourcePath prefixes to VFS directories. */
+  REGISTER_RESOURCE_PATHS: "httpuv_register_resource_paths",
 };
+
+/** Bypass SW app-document cache (warmup must hit R so deps register). */
+export const WARMUP_REQUEST_HEADER = "X-Shiny-Forge-Warmup";
 
 /** Message types on Module.httpuv.channel (R ↔ JS bridge). */
 export const CHANNEL = {

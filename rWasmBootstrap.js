@@ -1,9 +1,21 @@
 import { injectRWasmEvalGlue } from "./rWasmEval.js";
+import { isHttpuvDebug } from "./httpuv-debug.js";
+import { runLaterWasmTests } from "./rWasmLaterTest.js";
+
+/** @type {(() => void) | null} */
+let evalRPostFlush = null;
+
+/**
+ * @param {() => void} fn
+ */
+export function setEvalRPostFlush(fn) {
+  evalRPostFlush = fn;
+}
 
 export const WASM_R_HOME = "/R_HOME";
 export const WEB_APP_DIR = "/webApp";
 export const WEB_APP_R = `${WEB_APP_DIR}/app.R`;
-export const SHINY_FORGE_START_R = "/shinyForgeStart.R";
+export const HTTPUV_DEBUG_R = "/httpuvDebug.R";
 
 const VFS_SKIP = new Set([`${WASM_R_HOME}/etc/ldpaths`, `${WASM_R_HOME}/etc/Makeconf`]);
 
@@ -189,34 +201,50 @@ export function evalR(Module, code) {
   if (typeof Module.evalR !== "function") {
     throw new Error("Module.evalR is missing; check rWasmEval.js glue patch");
   }
-  return Module.evalR(code);
+  if (Module._rWasmEvalDepth > 0) {
+    throw new Error("reentrant evalR");
+  }
+  Module._rWasmEvalDepth = 1;
+  try {
+    Module.evalR(code);
+  } finally {
+    Module._rWasmEvalDepth = 0;
+    evalRPostFlush?.();
+  }
 }
 
 /**
  * @param {string} moduleUrl
  * @param {object} module
  */
-export async function mountForgeStartScript(moduleUrl, module) {
-  const url = new URL("shinyForgeStart.R", new URL(".", moduleUrl));
+export async function mountHttpuvDebugScript(moduleUrl, module) {
+  if (!isHttpuvDebug()) {
+    return;
+  }
+  const url = new URL("httpuvDebug.R", new URL(".", moduleUrl));
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Failed to fetch ${url.href}: HTTP ${res.status}`);
   }
-  module.FS.writeFile(SHINY_FORGE_START_R, await res.text());
+  module.FS.writeFile(HTTPUV_DEBUG_R, await res.text());
+  console.info("[rWasm] Mounted httpuv debug script");
 }
 
 /**
  * @param {object} Module
+ * @param {string} moduleUrl
  */
-export async function bootstrapRSession(Module) {
-  const status = Module.callMain(["--no-restore", "--no-save", "-e", "1"]);
+export async function bootstrapRSession(Module, moduleUrl) {
+  const status = Module.callMain(["--no-restore", "--no-save", "-e", "2+4"]);
   if (status !== 0) {
     throw new Error(`R bootstrap failed with status ${status}`);
   }
 
+  await runLaterWasmTests(moduleUrl, Module, (text) => console.info(String(text)));
+  await mountHttpuvDebugScript(moduleUrl, Module);
+
   evalR(Module, "suppressPackageStartupMessages(library(httpuv))");
   evalR(Module, 'setwd("/")');
-  evalR(Module, `source("${SHINY_FORGE_START_R}")`);
   console.info("[rWasm] R session ready");
 }
 
@@ -257,6 +285,7 @@ export async function initRModule({ moduleUrl, httpuv, print, printErr }) {
   return new Promise((resolve, reject) => {
     globalThis.Module = {
       noInitialRun: true,
+      _rWasmEvalDepth: 0,
       wasmBinary,
       locateFile,
       ENV: env,
@@ -271,8 +300,7 @@ export async function initRModule({ moduleUrl, httpuv, print, printErr }) {
           return;
         }
         preloadWasmSideModules(globalThis.Module, fileCache)
-          .then(() => mountForgeStartScript(moduleUrl, globalThis.Module))
-          .then(() => bootstrapRSession(globalThis.Module))
+          .then(() => bootstrapRSession(globalThis.Module, moduleUrl))
           .then(() => resolve(globalThis.Module))
           .catch(reject);
       },

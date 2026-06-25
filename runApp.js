@@ -1,9 +1,10 @@
-import { MSG } from "./httpuv-constants.js";
+import { MSG, REQUEST_TIMEOUT_MS, WARMUP_REQUEST_HEADER } from "./httpuv-constants.js";
 import { connectHttpuvComlink } from "./httpuv-comlink-setup.js";
+import { enableHttpuvDebug, isHttpuvDebug } from "./httpuv-debug.js";
 import { resolveShinyPrefix, setShinyPrefix, shinyAppUrl } from "./httpuv-prefix.js";
 import { RWASM } from "./rwasm-constants.js";
 
-const RUN_WEB_APP_R = `shiny_forge_start_app("webApp")`;
+const RUN_WEB_APP_R = `shiny::startApp(appDir = "webApp", port = 3838L, host = "127.0.0.1", launch.browser = FALSE, quiet = TRUE)`;
 
 /** @type {Worker | null} */
 let rWorker = null;
@@ -72,22 +73,48 @@ async function waitForServiceWorkerController(timeoutMs = 3_000) {
 
 /**
  * @param {ServiceWorkerRegistration} reg
+ * @param {number} [timeoutMs]
  */
-async function waitForWorkerActivated(reg) {
+async function waitForWorkerActivated(reg, timeoutMs = 15_000) {
+  await navigator.serviceWorker.ready;
+
   const worker = reg.installing ?? reg.waiting ?? reg.active;
   if (!worker) {
-    await navigator.serviceWorker.ready;
     return;
   }
   if (worker.state === "activated") {
     return;
   }
-  await new Promise((resolve) => {
-    worker.addEventListener("statechange", () => {
+
+  await new Promise((resolve, reject) => {
+    const onStateChange = () => {
       if (worker.state === "activated") {
+        cleanup();
         resolve();
       }
-    });
+    };
+
+    const deadline = setTimeout(() => {
+      cleanup();
+      reject(
+        new Error(
+          `Service worker activation timed out (state: ${worker.state})`,
+        ),
+      );
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(deadline);
+      worker.removeEventListener("statechange", onStateChange);
+    };
+
+    worker.addEventListener("statechange", onStateChange);
+
+    // skipWaiting() may have activated before we subscribed.
+    if (worker.state === "activated") {
+      cleanup();
+      resolve();
+    }
   });
 }
 
@@ -166,9 +193,13 @@ function postToRWorker(worker, msg, transfer = []) {
         return;
       }
 
-      if (data.type === RWASM.EVAL_RESULT) {
+      if (
+        data.type === RWASM.EVAL_RESULT ||
+        data.type === RWASM.STOPPED ||
+        data.type === RWASM.RESOURCE_PATHS
+      ) {
         worker.removeEventListener("message", onMessage);
-        if (data.ok) {
+        if (data.type === RWASM.STOPPED || data.type === RWASM.RESOURCE_PATHS || data.ok) {
           resolve(data);
         } else {
           reject(new Error(data.error ?? "eval failed"));
@@ -185,7 +216,11 @@ function postToRWorker(worker, msg, transfer = []) {
  * @returns {Promise<Worker>}
  */
 function createRWorker() {
-  const worker = new Worker(new URL("./rWasmWorker.js", import.meta.url), { type: "module" });
+  const workerUrl = new URL("./rWasmWorker.js", import.meta.url);
+  if (isHttpuvDebug()) {
+    workerUrl.searchParams.set("httpuvDebug", "1");
+  }
+  const worker = new Worker(workerUrl, { type: "module" });
 
   return new Promise((resolve, reject) => {
     /** @param {MessageEvent} event */
@@ -236,11 +271,12 @@ async function ensureComlinkConnected() {
   }
 
   comlinkPromise = (async () => {
-    const worker = await ensureRWorker();
-    await ensureHttpuvServiceWorker();
+    console.info("[runApp] Waiting for R worker and service worker…");
+    const [worker] = await Promise.all([ensureRWorker(), ensureHttpuvServiceWorker()]);
     if (!navigator.serviceWorker.controller) {
       throw new Error("Service worker controller is not available");
     }
+    console.info("[runApp] Connecting Comlink…");
     await connectHttpuvComlink(worker);
     comlinkConnected = true;
   })();
@@ -260,21 +296,31 @@ export async function ensureHttpuvReady() {
 }
 
 navigator.serviceWorker.addEventListener("controllerchange", () => {
+  // Re-announce the host client; do not reconnect Comlink. MessagePorts between
+  // the R worker and service worker survive SW activation, and reconnecting here
+  // races with in-flight HTTP (COMLINK_READY timeout).
   announceHostToServiceWorker();
-  if (!comlinkConnected) {
-    return;
-  }
-  comlinkConnected = false;
-  comlinkPromise = null;
-  void ensureComlinkConnected().catch((err) => {
-    console.error("[httpuv] Comlink reconnect failed:", err);
-  });
 });
 
 globalThis.__shinyForge = {
   shinyUrl: (subpath = "") => shinyAppUrl(subpath),
   ensureHttpuvReady,
   stopRunningApp,
+  enableHttpuvDebug,
+  async debugHttpuvState(label = "manual") {
+    const worker = await ensureRWorker();
+    await postToRWorker(worker, {
+      type: RWASM.EVAL,
+      code: `source("/httpuvDebug.R"); forge_httpuv_debug_state(${JSON.stringify(label)})`,
+    });
+  },
+  async debugHttpuvPump(label = "manual") {
+    const worker = await ensureRWorker();
+    await postToRWorker(worker, {
+      type: RWASM.EVAL,
+      code: `source("/httpuvDebug.R"); forge_httpuv_debug_pump(${JSON.stringify(label)})`,
+    });
+  },
   async testVirtualSocket(message = '{"method":"ping"}') {
     await ensureHttpuvReady();
     if (!navigator.serviceWorker.controller) {
@@ -312,20 +358,10 @@ globalThis.__shinyForge = {
   },
 };
 
-function stopWasmPump(worker) {
-  worker.postMessage({ type: RWASM.PUMP_STOP });
-}
-
-function startWasmPump(worker) {
-  worker.postMessage({ type: RWASM.PUMP_START });
-  console.info("[runApp] WASM event pump started (worker)");
-}
-
-export function stopRunningApp() {
+function stopRunningApp() {
   navigator.serviceWorker.controller?.postMessage({ type: MSG.STOP });
 
   if (rWorker) {
-    stopWasmPump(rWorker);
     rWorker.postMessage({ type: RWASM.STOP_APP });
   }
   console.info("[runApp] App stopped");
@@ -340,6 +376,52 @@ function loadViewerFrame() {
   console.info("[runApp] Viewer iframe →", url);
 }
 
+/**
+ * First WASM Shiny page render can take tens of seconds; complete one GET
+ * through the service worker before pointing the iframe at the app.
+ */
+function clearAppDocumentCache() {
+  navigator.serviceWorker.controller?.postMessage({ type: MSG.CLEAR_APP_CACHE });
+}
+
+/**
+ * After warmup, copy shiny::resourcePaths() into the SW for direct R_HOME static serving.
+ * @param {Worker} worker
+ * @returns {Promise<void>}
+ */
+async function syncResourcePathsToServiceWorker(worker) {
+  const controller = navigator.serviceWorker.controller;
+  if (!controller) {
+    return;
+  }
+
+  try {
+    const data = await postToRWorker(worker, { type: RWASM.GET_RESOURCE_PATHS });
+    const paths = data.paths ?? {};
+    controller.postMessage({ type: MSG.REGISTER_RESOURCE_PATHS, paths });
+    if (Object.keys(paths).length > 0) {
+      console.info("[runApp] synced", Object.keys(paths).length, "resource path(s) to SW");
+    }
+  } catch (err) {
+    console.warn("[runApp] resource path sync failed; SW will use static fallbacks", err);
+  }
+}
+
+async function waitForShinyHttpReady(worker) {
+  const url = shinyAppUrl();
+  console.info("[runApp] Warming up Shiny (may take a minute on first load)…", url);
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { [WARMUP_REQUEST_HEADER]: "1" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    throw new Error(`Shiny warmup GET ${url} failed: HTTP ${res.status}`);
+  }
+  console.info("[runApp] Shiny warmup OK (HTTP", res.status + ")");
+  await syncResourcePathsToServiceWorker(worker);
+}
+
 export async function runApp(code) {
   const trimmed = code.trim();
   if (!trimmed) {
@@ -349,7 +431,8 @@ export async function runApp(code) {
 
   const worker = await ensureRWorker();
 
-  worker.postMessage({ type: RWASM.STOP_APP });
+  clearAppDocumentCache();
+  await postToRWorker(worker, { type: RWASM.STOP_APP });
 
   await postToRWorker(worker, {
     type: RWASM.WRITE_WEB_APP,
@@ -361,7 +444,17 @@ export async function runApp(code) {
     type: RWASM.EVAL,
     code: RUN_WEB_APP_R,
   });
-  startWasmPump(worker);
+
+  if (isHttpuvDebug()) {
+    await postToRWorker(worker, {
+      type: RWASM.EVAL,
+      code: `tryCatch({
+  source("/httpuvDebug.R")
+  forge_httpuv_install_traces()
+  forge_httpuv_debug_state("post-start")
+}, error = function(e) message("[httpuv-debug] setup failed: ", conditionMessage(e)))`,
+    });
+  }
 
   return 0;
 }
@@ -375,10 +468,12 @@ function getEditorCode() {
  */
 async function runEditorApp(options = {}) {
   await ensureHttpuvReady();
+  const worker = await ensureRWorker();
   if (options.stopFirst) {
     stopRunningApp();
   }
   await runApp(getEditorCode());
+  await waitForShinyHttpReady(worker);
   loadViewerFrame();
 }
 
@@ -394,6 +489,15 @@ document.getElementById("run-button")?.addEventListener("click", async () => {
   }
 });
 
+if (isHttpuvDebug()) {
+  console.info("[runApp] httpuv debug tracing enabled (?httpuvDebug=1)");
+}
+
 void runEditorApp().catch((err) => {
   console.error("[runApp] Failed to start:", err);
+});
+
+// Register the service worker while R.wasm boots (do not block on the worker).
+void ensureHttpuvServiceWorker().catch((err) => {
+  console.error("[httpuv] Service worker setup failed:", err);
 });

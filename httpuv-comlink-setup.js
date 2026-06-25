@@ -98,10 +98,10 @@ export function createSwDeliveryApi(deliverOutbound) {
 
 /**
  * Build the API exposed by the R worker for inbound httpuv traffic.
- * @param {(req: object) => Promise<void>} onHttpRequest
- * @param {() => Promise<void>} onStop
+ * @param {(req: object) => void | Promise<void>} onHttpRequest
+ * @param {() => void} onStop
  */
-export function createRHostApi(onHttpRequest, onStop) {
+export function createRHostApi(onHttpRequest, onStop, getResourcePaths) {
   return {
     deliverHttpRequest(req) {
       return onHttpRequest({
@@ -114,8 +114,11 @@ export function createRHostApi(onHttpRequest, onStop) {
         clientId: req.clientId ?? null,
       });
     },
+    getShinyResourcePaths() {
+      return getResourcePaths();
+    },
     stop() {
-      return onStop();
+      onStop();
     },
   };
 }

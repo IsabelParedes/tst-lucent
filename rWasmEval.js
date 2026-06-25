@@ -45,8 +45,10 @@ Module.evalR=function(code){
   var Rf_length=shinyForgeResolveR("Rf_length");
   var VECTOR_ELT=shinyForgeResolveR("VECTOR_ELT");
   var Rf_eval=shinyForgeResolveR("Rf_eval");
+  var R_tryEval=shinyForgeResolveR("R_tryEval");
   var Rf_protect=shinyForgeResolveR("Rf_protect");
   var Rf_unprotect=shinyForgeResolveR("Rf_unprotect");
+  var Rf_asChar=shinyForgeResolveR("Rf_asChar");
   var env=shinyForgeGlobalEnv();
   var nil=shinyForgeRData("R_NilValue");
   var STRSXP=16;
@@ -65,8 +67,21 @@ Module.evalR=function(code){
   }
   var n=Rf_length(parsed);
   var result=nil;
+  var errorOccurredPtr=stackAlloc(4);
   for(var i=0;i<n;i++){
-    result=Rf_eval(VECTOR_ELT(parsed,i),env);
+    setValue(errorOccurredPtr,0,"i32");
+    result=R_tryEval(VECTOR_ELT(parsed,i),env,errorOccurredPtr);
+    if(getValue(errorOccurredPtr,"i32")){
+      var errMsg="R evaluation error";
+      try{
+        var errChars=Rf_asChar(result);
+        if(errChars){
+          errMsg=UTF8ToString(errChars);
+        }
+      }catch(e){}
+      Rf_unprotect(1);
+      throw new Error(errMsg);
+    }
   }
   Rf_unprotect(1);
   return result;
