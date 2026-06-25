@@ -24,6 +24,62 @@ let hostClientId = null;
 /** @type {import('comlink').Remote<{ deliverHttpRequest: Function, stop: Function }> | null} */
 let rwasmHost = null;
 
+/** @type {(() => void) | null} */
+let rwasmHostReadyResolve = null;
+
+/** @type {Promise<void>} */
+let rwasmHostReady = new Promise((resolve) => {
+  rwasmHostReadyResolve = resolve;
+});
+
+function markRwasmHostReady() {
+  if (rwasmHostReadyResolve) {
+    rwasmHostReadyResolve();
+    rwasmHostReadyResolve = null;
+  }
+}
+
+function resetRwasmHostWaiter() {
+  rwasmHost = null;
+  rwasmHostReady = new Promise((resolve) => {
+    rwasmHostReadyResolve = resolve;
+  });
+}
+
+/**
+ * @param {number} [timeoutMs]
+ * @returns {Promise<NonNullable<typeof rwasmHost>>}
+ */
+async function waitForRwasmHost(timeoutMs = REQUEST_TIMEOUT_MS) {
+  if (rwasmHost) {
+    return rwasmHost;
+  }
+
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("R worker Comlink not ready")), timeoutMs);
+  });
+
+  try {
+    await Promise.race([rwasmHostReady, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!rwasmHost) {
+    throw new Error("R worker Comlink not ready");
+  }
+  return rwasmHost;
+}
+
+/**
+ * Ask the host page to re-handshake Comlink MessagePorts.
+ */
+async function requestComlinkFromHost() {
+  const client = await getHostClient();
+  client?.postMessage({ type: MSG.REQUEST_COMLINK });
+}
+
 /** @type {Map<string, { resolve: (resp: PendingResponse) => void, reject: (err: Error) => void, timer: ReturnType<typeof setTimeout> }>} */
 const pendingHttp = new Map();
 
@@ -229,6 +285,7 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   console.info("[httpuv-sw] activated, shiny prefix:", SHINY_PREFIX);
+  resetRwasmHostWaiter();
   event.waitUntil(self.clients.claim());
 });
 
@@ -470,6 +527,20 @@ async function handleShinyFetch(event) {
   }
 
   if (!rwasmHost) {
+    void requestComlinkFromHost();
+    try {
+      await waitForRwasmHost(60_000);
+    } catch (err) {
+      console.error("[httpuv-sw] R worker not ready for", request.url, err);
+      return new Response("Shiny R worker is not ready", {
+        status: 503,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+  }
+
+  const host = rwasmHost;
+  if (!host) {
     return new Response("Shiny R worker is not ready", {
       status: 503,
       headers: { "Content-Type": "text/plain" },
@@ -492,7 +563,7 @@ async function handleShinyFetch(event) {
     clientId: event.clientId,
   };
 
-  const delivery = rwasmHost
+  const delivery = host
     .deliverHttpRequest(body ? Comlink.transfer(payload, [body]) : payload)
     .catch((err) => {
       console.error("[httpuv-sw] R worker request failed", err);
@@ -553,6 +624,7 @@ self.addEventListener("message", (event) => {
     port.start();
     if (msg.role === COMLINK.ROLE.R_HOST) {
       rwasmHost = Comlink.wrap(port);
+      markRwasmHostReady();
       console.info("[httpuv-sw] Comlink: connected to R host");
       return;
     }

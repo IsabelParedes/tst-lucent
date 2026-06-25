@@ -23,6 +23,8 @@ export const MSG = {
   SYNC_RESOURCE_PATHS: "httpuv_sync_resource_paths",
   /** R worker → SW mapping of addResourcePath prefixes to VFS directories. */
   REGISTER_RESOURCE_PATHS: "httpuv_register_resource_paths",
+  /** SW → host: Comlink to the R worker was lost (e.g. after SW update). */
+  REQUEST_COMLINK: "httpuv_request_comlink",
 };
 
 /** Bypass SW app-document cache (warmup must hit R so deps register). */

@@ -26,7 +26,6 @@ export function rEnv(moduleUrl) {
   const wasmRHome = WASM_R_HOME;
   return {
     R_HOME: wasmRHome,
-    R_DEFAULT_PACKAGES: "NULL",
     R_LIBS: `${wasmRHome}/library`,
     R_LIBS_USER: "NULL",
     R_LIBS_SITE: "NULL",

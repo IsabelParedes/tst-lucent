@@ -284,6 +284,15 @@ async function ensureComlinkConnected() {
   return comlinkPromise;
 }
 
+function reconnectComlinkAfterServiceWorkerUpdate() {
+  comlinkConnected = false;
+  comlinkPromise = null;
+  announceHostToServiceWorker();
+  void ensureComlinkConnected().catch((err) => {
+    console.warn("[httpuv] Comlink reconnect after service worker update failed:", err);
+  });
+}
+
 /**
  * @returns {Promise<void>}
  */
@@ -296,10 +305,13 @@ export async function ensureHttpuvReady() {
 }
 
 navigator.serviceWorker.addEventListener("controllerchange", () => {
-  // Re-announce the host client; do not reconnect Comlink. MessagePorts between
-  // the R worker and service worker survive SW activation, and reconnecting here
-  // races with in-flight HTTP (COMLINK_READY timeout).
-  announceHostToServiceWorker();
+  reconnectComlinkAfterServiceWorkerUpdate();
+});
+
+navigator.serviceWorker.addEventListener("message", (event) => {
+  if (event.data?.type === MSG.REQUEST_COMLINK) {
+    reconnectComlinkAfterServiceWorkerUpdate();
+  }
 });
 
 globalThis.__shinyForge = {
@@ -474,6 +486,7 @@ async function runEditorApp(options = {}) {
   }
   await runApp(getEditorCode());
   await waitForShinyHttpReady(worker);
+  await ensureComlinkConnected();
   loadViewerFrame();
 }
 
