@@ -24,6 +24,51 @@
         >
 library(shiny)
 
+# SVG histogram (no graphics device — works in WASM).
+hist_svg <- function(n, fill, title, seed = NULL) {
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+  h <- hist(rnorm(n), plot = FALSE)
+  width <- 480
+  height <- 360
+  pad <- 40
+  plotW <- width - 2 * pad
+  plotH <- height - 2 * pad
+  maxcount <- max(h$counts)
+  barW <- plotW / length(h$counts)
+
+  bars <- vapply(seq_along(h$counts), function(i) {
+    barH <- if (maxcount > 0) (h$counts[i] / maxcount) * plotH else 0
+    x0 <- pad + (i - 1) * barW
+    y0 <- pad + plotH - barH
+    sprintf(
+      '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="%s"/>',
+      x0, y0, barW * 0.92, barH, fill
+    )
+  }, character(1))
+
+  sprintf(
+    paste0(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="%1$d" height="%2$d" ',
+      'viewBox="0 0 %1$d %2$d" role="img">',
+      '<text x="%3$.0f" y="24" text-anchor="middle" font-family="sans-serif" ',
+      'font-size="14">%8$s</text>',
+      '<rect x="%4$d" y="%4$d" width="%5$d" height="%6$d" fill="none" stroke="#ccc"/>',
+      "%7$s",
+      "</svg>"
+    ),
+    width,
+    height,
+    width / 2,
+    pad,
+    plotW,
+    plotH,
+    paste(bars, collapse = ""),
+    title
+  )
+}
+
 ui <- fluidPage(
   titlePanel("Hello Shiny!"),
   sidebarLayout(
@@ -37,14 +82,16 @@ ui <- fluidPage(
       )
     ),
     mainPanel(
-      plotOutput("distPlot")
+      htmltools::HTML(hist_svg(500, "#3DA35D", "Histogram A (static SVG)", seed = 42)),
+      tags$hr(),
+      textOutput("numValue")
     )
   )
 )
 
 server <- function(input, output) {
-  output$distPlot <- renderPlot({
-    hist(rnorm(input$num))
+  output$numValue <- renderText({
+    input$num
   })
 }
 
