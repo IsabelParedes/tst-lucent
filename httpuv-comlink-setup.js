@@ -4,7 +4,8 @@ import { COMLINK } from "./httpuv-comlink.js";
 import { RWASM } from "./rwasm-constants.js";
 
 /**
- * Broker two Comlink MessagePorts between the service worker and R worker.
+ * Broker a single Comlink MessagePort between the service worker and R worker.
+ * The SW creates a reverse delivery channel after wrapping the worker API.
  * @param {Worker} rWorker
  * @returns {Promise<void>}
  */
@@ -16,28 +17,12 @@ export async function connectHttpuvComlink(rWorker) {
 
   const readyPromise = waitForComlinkReady(rWorker);
 
-  const rHostChannel = new MessageChannel();
-  controller.postMessage(
-    { type: COMLINK.PORT_HANDOFF, role: COMLINK.ROLE.R_HOST },
-    [rHostChannel.port1],
-  );
-  rWorker.postMessage(
-    { type: RWASM.COMLINK_PORT, role: COMLINK.ROLE.R_HOST },
-    [rHostChannel.port2],
-  );
-
-  const swDeliveryChannel = new MessageChannel();
-  controller.postMessage(
-    { type: COMLINK.PORT_HANDOFF, role: COMLINK.ROLE.SW_DELIVERY },
-    [swDeliveryChannel.port1],
-  );
-  rWorker.postMessage(
-    { type: RWASM.COMLINK_PORT, role: COMLINK.ROLE.SW_DELIVERY },
-    [swDeliveryChannel.port2],
-  );
+  const channel = new MessageChannel();
+  controller.postMessage({ type: COMLINK.PORT_HANDOFF }, [channel.port1]);
+  rWorker.postMessage({ type: RWASM.COMLINK_PORT }, [channel.port2]);
 
   await readyPromise;
-  console.info("[httpuv-comlink] Service worker ↔ R worker connected");
+  console.info("[httpuv-comlink] Service worker ↔ R worker connected (unified port)");
 }
 
 /**
@@ -100,9 +85,14 @@ export function createSwDeliveryApi(deliverOutbound) {
  * Build the API exposed by the R worker for inbound httpuv traffic.
  * @param {(req: object) => void | Promise<void>} onHttpRequest
  * @param {() => void} onStop
+ * @param {() => Promise<Record<string, string>>} getResourcePaths
+ * @param {(port: MessagePort) => void} registerSwDelivery
  */
-export function createRHostApi(onHttpRequest, onStop, getResourcePaths) {
+export function createRHostApi(onHttpRequest, onStop, getResourcePaths, registerSwDelivery) {
   return {
+    registerSwDelivery(port) {
+      registerSwDelivery(port);
+    },
     deliverHttpRequest(req) {
       return onHttpRequest({
         type: MSG.HTTP_REQUEST,

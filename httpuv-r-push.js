@@ -25,6 +25,26 @@ export function serializeReqForR(req) {
 
 /**
  * @param {unknown} message
+ * @param {boolean} binary
+ * @returns {number[]}
+ */
+function encodeWsPayloadBytes(message, binary) {
+  if (binary) {
+    if (message instanceof ArrayBuffer) {
+      return Array.from(new Uint8Array(message));
+    }
+    if (ArrayBuffer.isView(message)) {
+      return Array.from(new Uint8Array(message.buffer, message.byteOffset, message.byteLength));
+    }
+    if (Array.isArray(message)) {
+      return message;
+    }
+  }
+  return Array.from(new TextEncoder().encode(String(message ?? "")));
+}
+
+/**
+ * @param {unknown} message
  * @returns {number[] | string}
  */
 function serializeWsMessageForR(message) {
@@ -119,19 +139,42 @@ export function channelMessageToRExpr(msg) {
       const reqPart = msg.req
         ? `jsonlite::fromJSON(${jsonForR(serializeReqForR(msg.req))}, simplifyVector=FALSE)`
         : "NULL";
-      return `httpuv::httpuv_push_ws_open(${jsonForR(msg.handle)}, ${reqPart})`;
+      // WASM: handle synchronously — later callbacks compete with suspended
+      // serviceNonBlocking and session HTTP returns 204 before they run.
+      return `local({
+  wrapper <- get("active_app_wrapper", envir=httpuv:::.globals)
+  if (!is.null(wrapper)) {
+    req <- ${reqPart}
+    wrapper$onWSOpen(${jsonForR(msg.handle)}, httpuv:::httpuv_js_req_to_rook(req))
+  }
+  invisible(TRUE)
+})`;
     }
 
     case CHANNEL.WS_MESSAGE: {
-      const binary = Boolean(msg.binary);
-      const messagePart = binary
-        ? `jsonlite::fromJSON(${jsonForR(serializeWsMessageForR(msg.message))}, simplifyVector=FALSE)`
-        : jsonForR(String(msg.message ?? ""));
-      return `httpuv::httpuv_push_ws_message(${jsonForR(msg.handle)}, ${binary ? "TRUE" : "FALSE"}, ${messagePart})`;
+      const bytesJson = jsonForR(encodeWsPayloadBytes(msg.message, Boolean(msg.binary)));
+      // Pass raw bytes (binary=TRUE) via a JSON byte array — avoids embedding
+      // large init JSON in evalR source. Schedule on later so Shiny can flush.
+      return `later::later(function() {
+  wrapper <- get("active_app_wrapper", envir=httpuv:::.globals)
+  if (!is.null(wrapper)) {
+    msg_raw <- httpuv:::httpuv_bytes_to_raw(
+      jsonlite::fromJSON(${bytesJson}, simplifyVector=FALSE)
+    )
+    wrapper$onWSMessage(${jsonForR(msg.handle)}, TRUE, msg_raw)
+  }
+}, delay = 0)
+invisible(TRUE)`;
     }
 
     case CHANNEL.WS_CLOSE:
-      return `httpuv::httpuv_push_ws_close(${jsonForR(msg.handle)})`;
+      return `local({
+  wrapper <- get("active_app_wrapper", envir=httpuv:::.globals)
+  if (!is.null(wrapper)) {
+    wrapper$onWSClose(${jsonForR(msg.handle)})
+  }
+  invisible(TRUE)
+})`;
 
     default:
       throw new Error(`unsupported inbound channel message type: ${msg.type}`);

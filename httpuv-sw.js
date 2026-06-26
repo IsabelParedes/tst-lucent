@@ -8,7 +8,7 @@ import {
 import { httpuvDebugLog } from "./httpuv-debug.js";
 import { COMLINK } from "./httpuv-comlink.js";
 import { Comlink, createSwDeliveryApi } from "./httpuv-comlink-setup.js";
-import { parseSessionAction, resolveSessionPrefix, resolveShinyPrefix, isHostPushUrl } from "./httpuv-prefix.js";
+import { parseSessionAction, resolveSessionPrefix, resolveShinyPrefix, isHostPushUrl, normalizeSessionHandle } from "./httpuv-prefix.js";
 import { resolveShinyStaticRHomePath, rHomePathFromVfsDir } from "./httpuv-static-resolve.js";
 
 const SHINY_PREFIX = resolveShinyPrefix(import.meta.url);
@@ -31,6 +31,26 @@ let rwasmHostReadyResolve = null;
 let rwasmHostReady = new Promise((resolve) => {
   rwasmHostReadyResolve = resolve;
 });
+
+/**
+ * @param {MessagePort} port
+ */
+async function connectSwToWorker(port) {
+  const workerHost = Comlink.wrap(port);
+  const deliveryChannel = new MessageChannel();
+  Comlink.expose(createSwDeliveryApi(handleHostOutboundMessage), deliveryChannel.port1);
+  try {
+    await workerHost.registerSwDelivery(
+      Comlink.transfer(deliveryChannel.port2, [deliveryChannel.port2]),
+    );
+    rwasmHost = workerHost;
+    markRwasmHostReady();
+    console.info("[httpuv-sw] Comlink: unified session connected");
+  } catch (err) {
+    console.error("[httpuv-sw] Comlink unified setup failed", err);
+    resetRwasmHostWaiter();
+  }
+}
 
 function markRwasmHostReady() {
   if (rwasmHostReadyResolve) {
@@ -354,15 +374,28 @@ async function headersToObject(request) {
  * @param {object} msg
  */
 function deliverWsPush(handle, msg) {
-  const queue = pendingRecv.get(handle);
+  const key = normalizeSessionHandle(handle);
+  const queue = pendingRecv.get(key);
+  const messageLen =
+    typeof msg.message === "string"
+      ? msg.message.length
+      : msg.message?.byteLength ?? msg.message?.length ?? 0;
+  httpuvDebugLog("sw-ws-push", {
+    handle: key,
+    wsType: msg.wsType,
+    messageLen,
+    recvWaiters: queue?.length ?? 0,
+    queuedBefore: queuedWsPush.get(key)?.length ?? 0,
+  });
   if (queue && queue.length > 0) {
     const waiter = queue.shift();
     clearTimeout(waiter.timer);
     if (queue.length === 0) {
-      pendingRecv.delete(handle);
+      pendingRecv.delete(key);
     }
     const headers = new Headers();
     headers.set("X-Httpuv-WS-Type", msg.wsType ?? WS_FRAME.SEND);
+    headers.set("X-Httpuv-WS-Binary", msg.binary ? "1" : "0");
     if (!msg.binary) {
       headers.set("Content-Type", "text/plain; charset=UTF-8");
     }
@@ -375,10 +408,10 @@ function deliverWsPush(handle, msg) {
     return;
   }
 
-  if (!queuedWsPush.has(handle)) {
-    queuedWsPush.set(handle, []);
+  if (!queuedWsPush.has(key)) {
+    queuedWsPush.set(key, []);
   }
-  queuedWsPush.get(handle).push(msg);
+  queuedWsPush.get(key).push(msg);
 }
 
 /**
@@ -387,7 +420,8 @@ function deliverWsPush(handle, msg) {
  */
 async function handleSessionRecv(event) {
   const url = new URL(event.request.url);
-  const handle = url.searchParams.get("handle");
+  const handle = normalizeSessionHandle(url.searchParams.get("handle"));
+  httpuvDebugLog("sw-recv", { handle, url: url.href });
   if (!handle) {
     return new Response("missing handle query parameter", {
       status: 400,
@@ -403,6 +437,7 @@ async function handleSessionRecv(event) {
     }
     const headers = new Headers();
     headers.set("X-Httpuv-WS-Type", msg.wsType ?? WS_FRAME.SEND);
+    headers.set("X-Httpuv-WS-Binary", msg.binary ? "1" : "0");
     if (!msg.binary) {
       headers.set("Content-Type", "text/plain; charset=UTF-8");
     }
@@ -477,7 +512,15 @@ function handleHostOutboundMessage(msg) {
         console.warn("[httpuv-sw] WS_PUSH missing handle");
         return;
       }
-      deliverWsPush(String(msg.handle), msg);
+      httpuvDebugLog("sw-ws-push-inbound", {
+        handle: normalizeSessionHandle(msg.handle),
+        wsType: msg.wsType,
+        messageLen:
+          typeof msg.message === "string"
+            ? msg.message.length
+            : msg.message?.byteLength ?? msg.message?.length ?? 0,
+      });
+      deliverWsPush(normalizeSessionHandle(msg.handle), msg);
       break;
     }
     default:
@@ -622,17 +665,9 @@ self.addEventListener("message", (event) => {
   if (msg.type === COMLINK.PORT_HANDOFF && event.ports[0]) {
     const port = event.ports[0];
     port.start();
-    if (msg.role === COMLINK.ROLE.R_HOST) {
-      rwasmHost = Comlink.wrap(port);
-      markRwasmHostReady();
-      console.info("[httpuv-sw] Comlink: connected to R host");
-      return;
-    }
-    if (msg.role === COMLINK.ROLE.SW_DELIVERY) {
-      Comlink.expose(createSwDeliveryApi(handleHostOutboundMessage), port);
-      console.info("[httpuv-sw] Comlink: exposing delivery API");
-      return;
-    }
+    resetRwasmHostWaiter();
+    void connectSwToWorker(port);
+    return;
   }
 
   if (typeof msg.type !== "string") {

@@ -3,7 +3,20 @@
  * Loaded as a module in the Shiny app iframe; overrides Shiny.createSocket.
  */
 
-const SESSION = "__session__/";
+/**
+ * Build an absolute session URL under the Shiny app prefix.
+ * @param {string} action
+ * @param {{ handle?: string }} [opts]
+ * @returns {string}
+ */
+function sessionUrl(action, opts = {}) {
+  const base = new URL("__session__/", location.href);
+  const url = new URL(action.replace(/^\//, ""), base);
+  if (opts.handle) {
+    url.searchParams.set("handle", opts.handle);
+  }
+  return url.href;
+}
 
 /**
  * Minimal WebSocket stand-in using the httpuv session fetch API.
@@ -20,8 +33,9 @@ export class VirtualShinySocket {
     this.binaryType = "arraybuffer";
     /** @type {string | null} */
     this._handle = null;
-    this._closed = false;
     this._recvActive = false;
+    /** @type {(() => void) | null} */
+    this._recvBootResolve = null;
 
     /** @type {((event: Event) => void) | null} */
     this.onopen = null;
@@ -37,7 +51,9 @@ export class VirtualShinySocket {
 
   async _connect() {
     try {
-      const res = await fetch(`${SESSION}open`, { method: "POST" });
+      const openUrl = sessionUrl("open");
+      console.info("[shiny-socket] session open", openUrl);
+      const res = await fetch(openUrl, { method: "POST" });
       if (!res.ok) {
         throw new Error(`session open failed: HTTP ${res.status}`);
       }
@@ -45,10 +61,16 @@ export class VirtualShinySocket {
       if (!handle) {
         throw new Error("session open response missing handle");
       }
-      this._handle = handle;
+      this._handle = String(handle);
       this.readyState = VirtualShinySocket.OPEN;
       this._recvActive = true;
+
+      const recvBoot = new Promise((resolve) => {
+        this._recvBootResolve = resolve;
+      });
       void this._recvLoop();
+      await recvBoot;
+
       this.onopen?.(new Event("open"));
     } catch (err) {
       console.error("[shiny-socket] connect failed", err);
@@ -61,7 +83,13 @@ export class VirtualShinySocket {
   async _recvLoop() {
     while (this._recvActive && this._handle) {
       try {
-        const res = await fetch(`${SESSION}recv?handle=${encodeURIComponent(this._handle)}`);
+        const recvUrl = sessionUrl("recv", { handle: this._handle });
+        if (this._recvBootResolve) {
+          console.info("[shiny-socket] recv start", recvUrl);
+          this._recvBootResolve();
+          this._recvBootResolve = null;
+        }
+        const res = await fetch(recvUrl);
         if (!this._recvActive) {
           return;
         }
@@ -74,14 +102,29 @@ export class VirtualShinySocket {
 
         const wsType = res.headers.get("X-Httpuv-WS-Type") ?? "websocket.send";
         if (wsType === "websocket.close") {
-          this._finishClose(1000, "", true);
+          let code = 1000;
+          let reason = "";
+          try {
+            const text = await res.text();
+            if (text) {
+              const payload = JSON.parse(text);
+              code = Number(payload.code ?? code);
+              reason = String(payload.reason ?? "");
+            }
+          } catch {
+            // ignore malformed close payloads
+          }
+          this._finishClose(code, reason, true);
           return;
         }
 
-        const data =
-          this.binaryType === "arraybuffer"
-            ? await res.arrayBuffer()
-            : await res.text();
+        const wsBinary = res.headers.get("X-Httpuv-WS-Binary") === "1";
+        const data = wsBinary ? await res.arrayBuffer() : await res.text();
+        console.info("[shiny-socket] recv message", {
+          wsType,
+          binary: wsBinary,
+          bytes: typeof data === "string" ? data.length : data.byteLength,
+        });
         this.onmessage?.(new MessageEvent("message", { data }));
       } catch (err) {
         if (!this._recvActive) {
@@ -109,7 +152,12 @@ export class VirtualShinySocket {
         : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
       : data;
 
-    void fetch(`${SESSION}send?handle=${encodeURIComponent(this._handle)}`, {
+    const sendUrl = sessionUrl("send", { handle: this._handle });
+    console.info("[shiny-socket] session send", sendUrl, {
+      binary: isBinary,
+      bytes: isBinary ? body.byteLength : body.length,
+    });
+    void fetch(sendUrl, {
       method: "POST",
       headers: isBinary ? {} : { "Content-Type": "text/plain; charset=UTF-8" },
       body,
@@ -130,7 +178,8 @@ export class VirtualShinySocket {
     const handle = this._handle;
     this._recvActive = false;
     if (handle) {
-      void fetch(`${SESSION}close?handle=${encodeURIComponent(handle)}`, {
+      const closeUrl = sessionUrl("close", { handle });
+      void fetch(closeUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, reason }),

@@ -1,9 +1,8 @@
 import { flushDeferredOutbound, installHttpuvBridge, pushInboundHostMessage } from "./httpuv-bridge.js";
 import { httpuvDebugLog, isHttpuvDebug } from "./httpuv-debug.js";
-import { MSG, REQUEST_TIMEOUT_MS } from "./httpuv-constants.js";
-import { COMLINK } from "./httpuv-comlink.js";
+import { MSG, REQUEST_TIMEOUT_MS, CHANNEL } from "./httpuv-constants.js";
 import { Comlink, createRHostApi } from "./httpuv-comlink-setup.js";
-import { resolveShinyPrefix, setShinyPrefix } from "./httpuv-prefix.js";
+import { getShinyPrefix, isSessionHttpRequest, normalizeSessionHandle, resolveShinyPrefix, setShinyPrefix } from "./httpuv-prefix.js";
 import { channelMessageToRExpr, isLikelyStaticAsset } from "./httpuv-r-push.js";
 import { RWASM } from "./rwasm-constants.js";
 import { evalR, initRModule, setEvalRPostFlush, writeWebAppToVfs } from "./rWasmBootstrap.js";
@@ -152,15 +151,28 @@ function deliverToServiceWorker(outbound, transfer = []) {
   }
 
   if (outbound.type === MSG.WS_PUSH) {
+    const handle = normalizeSessionHandle(outbound.handle);
     const msg = {
-      handle: outbound.handle,
+      handle,
       binary: outbound.binary,
       wsType: outbound.wsType,
       message: outbound.message,
     };
-    void swDelivery.deliverWsPush(
-      transfer.length > 0 ? Comlink.transfer(msg, transfer) : msg,
-    );
+    const messageLen =
+      typeof outbound.message === "string"
+        ? outbound.message.length
+        : outbound.message?.byteLength ?? outbound.message?.length ?? 0;
+    httpuvDebugLog("comlink-deliver-ws", {
+      handle,
+      wsType: outbound.wsType,
+      binary: outbound.binary,
+      messageLen,
+    });
+    void swDelivery
+      .deliverWsPush(transfer.length > 0 ? Comlink.transfer(msg, transfer) : msg)
+      .catch((err) => {
+        console.error("[rWasmWorker] deliverWsPush failed:", formatRWasmError(err), err);
+      });
   }
 }
 
@@ -236,6 +248,21 @@ function pushToR(msg) {
   if (msg?.uuid) {
     httpuvDebugLog("worker-push-evalR-begin", { uuid: msg.uuid });
   }
+  if (
+    msg?.type === CHANNEL.WS_OPEN ||
+    msg?.type === CHANNEL.WS_MESSAGE ||
+    msg?.type === CHANNEL.WS_CLOSE
+  ) {
+    httpuvDebugLog("worker-push-ws", {
+      type: msg.type,
+      handle: normalizeSessionHandle(msg.handle),
+      binary: msg.binary,
+      messageLen:
+        typeof msg.message === "string"
+          ? msg.message.length
+          : msg.message?.byteLength ?? msg.message?.length ?? 0,
+    });
+  }
   evalR(
     rModule,
     `tryCatch({
@@ -287,6 +314,18 @@ function isStaticAssetUrl(url) {
   return isLikelyStaticAsset(url);
 }
 
+/**
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isSessionHttpUrl(url) {
+  try {
+    return isSessionHttpRequest(url, getShinyPrefix());
+  } catch {
+    return isSessionHttpRequest(url);
+  }
+}
+
 async function ensureShinyLoopSuspended() {
   if (shinyLoopSuspended || !rModule) {
     return;
@@ -328,6 +367,7 @@ async function deliverOneHttpRequest(req) {
   activeHttpDrainUuid = req.uuid;
 
   const staticAsset = isStaticAssetUrl(req.url);
+  const sessionHttp = isSessionHttpUrl(req.url);
 
   try {
     await enqueueRTask(() => {
@@ -339,6 +379,11 @@ async function deliverOneHttpRequest(req) {
 
       if (!state.resolved) {
         await drainAfterHttpPush(HTTP_PUSH_DRAIN_ROUNDS, req.uuid, state);
+      } else if (sessionHttp) {
+        // Session send/open return 204/200 immediately while Shiny still
+        // flushes outputs onto the virtual WebSocket via later.
+        httpuvDebugLog("worker-session-drain", { uuid: req.uuid });
+        await drainAfterHttpPush(HTTP_PUSH_DRAIN_ROUNDS, req.uuid, { resolved: false });
       }
     } else if (!state.resolved) {
       await yieldMs(HTTP_DRAIN_YIELD_MS);
@@ -358,7 +403,7 @@ async function drainHttpDeliveryQueue() {
     if (!item) {
       break;
     }
-    const needsSuspend = !isStaticAssetUrl(item.req.url);
+    const needsSuspend = !isStaticAssetUrl(item.req.url) && !isSessionHttpUrl(item.req.url);
     if (needsSuspend && !shinyLoopSuspended) {
       await ensureShinyLoopSuspended();
     }
@@ -376,7 +421,9 @@ async function drainHttpDeliveryQueue() {
       }
     }
     const next = httpDeliveryQueue[0];
-    const nextNeedsSuspend = Boolean(next && !isStaticAssetUrl(next.req.url));
+    const nextNeedsSuspend = Boolean(
+      next && !isStaticAssetUrl(next.req.url) && !isSessionHttpUrl(next.req.url),
+    );
     if (shinyLoopSuspended && !nextNeedsSuspend) {
       await ensureShinyLoopResumed();
     }
@@ -574,11 +621,13 @@ function exposeRHost(port) {
         });
     },
     () => getShinyResourcePaths(),
+    (deliveryPort) => {
+      connectSwDelivery(deliveryPort);
+    },
   );
   Comlink.expose(api, port);
   rHostPortReady = true;
-  console.info("[rWasmWorker] Comlink: exposing R host API");
-  maybeAnnounceComlinkReady();
+  console.info("[rWasmWorker] Comlink: exposing unified host API");
 }
 
 function connectSwDelivery(port) {
@@ -608,18 +657,11 @@ async function onMessage(event) {
   if (data?.type === RWASM.COMLINK_PORT && event.ports[0]) {
     const port = event.ports[0];
     port.start();
-    if (data.role === COMLINK.ROLE.R_HOST) {
-      // New handoff: wait for the matching delivery port before announcing ready.
-      rHostPortReady = false;
-      swDeliveryPortReady = false;
-      swDelivery = null;
-      exposeRHost(port);
-      return;
-    }
-    if (data.role === COMLINK.ROLE.SW_DELIVERY) {
-      connectSwDelivery(port);
-      return;
-    }
+    rHostPortReady = false;
+    swDeliveryPortReady = false;
+    swDelivery = null;
+    exposeRHost(port);
+    return;
   }
 
   if (!data || typeof data.type !== "string") {

@@ -5,7 +5,12 @@ import {
   WS_FRAME,
 } from "./httpuv-constants.js";
 import { httpuvDebugLog } from "./httpuv-debug.js";
-import { getShinyPrefix, parseSessionAction, shinyAppUrl } from "./httpuv-prefix.js";
+import {
+  getShinyPrefix,
+  normalizeSessionHandle,
+  parseSessionAction,
+  shinyAppUrl,
+} from "./httpuv-prefix.js";
 
 /** @typedef {Record<string, string>} HeaderMap */
 
@@ -140,9 +145,12 @@ export function shinySocketScriptUrl() {
  * @returns {string}
  */
 export function injectShinySocketBootstrap(html) {
+  const prefix = getShinyPrefix();
+  const baseTag = html.includes("<base") ? "" : `<base href="${prefix}">`;
   const tag = `<script type="module" src="${shinySocketScriptUrl()}"></script>`;
+  const injection = [baseTag, tag].filter(Boolean).join("\n  ");
   if (html.includes("<head")) {
-    return html.replace(/<head([^>]*)>/, `<head$1>\n  ${tag}`);
+    return html.replace(/<head([^>]*)>/, `<head$1>\n  ${injection}`);
   }
   if (html.includes("<body")) {
     return html.replace(/<body([^>]*)>/, `<body$1>\n  ${tag}`);
@@ -214,7 +222,7 @@ function sessionMessageFromBody(body) {
 function handleSessionHttp(msg, session) {
   switch (session.action) {
     case "open": {
-      const handle = crypto.randomUUID();
+      const handle = normalizeSessionHandle(crypto.randomUUID());
       const req = buildReq(msg);
       pushInboundChannelMessage({ type: CHANNEL.WS_OPEN, handle, req });
       sendTcpResponse(
@@ -234,7 +242,7 @@ function handleSessionHttp(msg, session) {
       const { binary, message } = sessionMessageFromBody(msg.body);
       pushInboundChannelMessage({
         type: CHANNEL.WS_MESSAGE,
-        handle: session.handle,
+        handle: normalizeSessionHandle(session.handle),
         binary,
         message,
       });
@@ -249,7 +257,7 @@ function handleSessionHttp(msg, session) {
       }
       pushInboundChannelMessage({
         type: CHANNEL.WS_CLOSE,
-        handle: session.handle,
+        handle: normalizeSessionHandle(session.handle),
       });
       sendTcpResponse(msg.uuid, 204, {}, null);
       break;
@@ -328,7 +336,7 @@ function formatOutboundForHost(msg, deliver) {
     deliver(
       {
         type: MSG.WS_PUSH,
-        handle: msg.data?.handle,
+        handle: normalizeSessionHandle(msg.data?.handle),
         binary: msg.data?.binary ?? false,
         wsType: msg.data?.type ?? WS_FRAME.SEND,
         message: body,

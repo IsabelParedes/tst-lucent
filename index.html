@@ -84,7 +84,9 @@ ui <- fluidPage(
     mainPanel(
       htmltools::HTML(hist_svg(500, "#3DA35D", "Histogram A (static SVG)", seed = 42)),
       tags$hr(),
-      textOutput("numValue")
+      textOutput("numValue"),
+      tags$hr(),
+      uiOutput("reactiveHist")
     )
   )
 )
@@ -92,6 +94,10 @@ ui <- fluidPage(
 server <- function(input, output) {
   output$numValue <- renderText({
     input$num
+  })
+
+  output$reactiveHist <- renderUI({
+    htmltools::HTML(hist_svg(input$num, "#E45756", "Histogram B (reactive SVG)"))
   })
 }
 

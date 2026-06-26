@@ -32,6 +32,20 @@ export function getShinyPrefix() {
 /** Session directory name under the Shiny virtual app prefix. */
 export const SESSION_DIR = "__session__";
 
+/**
+ * Strip accidental JSON quoting from session handles (R/Comlink sometimes
+ * double-encode UUID strings).
+ * @param {unknown} handle
+ * @returns {string}
+ */
+export function normalizeSessionHandle(handle) {
+  let s = String(handle ?? "").trim();
+  while (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    s = s.slice(1, -1);
+  }
+  return s;
+}
+
 /** Host → SW outbound path (fetch fallback when controller.postMessage unavailable). */
 export const HOST_DIR = "__host__";
 
@@ -65,10 +79,25 @@ export function parseSessionAction(urlString, shinyPrefix) {
   if (!["open", "send", "recv", "close"].includes(action)) {
     return null;
   }
+  const rawHandle = url.searchParams.get("handle");
   return {
     action,
-    handle: url.searchParams.get("handle"),
+    handle: rawHandle ? normalizeSessionHandle(rawHandle) : null,
   };
+}
+
+/**
+ * Session HTTP actions handled by the R worker (not SW long-poll recv).
+ * @param {string} urlString
+ * @param {string} [shinyPrefix]
+ * @returns {boolean}
+ */
+export function isSessionHttpRequest(urlString, shinyPrefix) {
+  if (shinyPrefix) {
+    const session = parseSessionAction(urlString, shinyPrefix);
+    return session !== null && session.action !== "recv";
+  }
+  return /\/__session__\/(open|send|close)(?:\?|$|\/)/.test(urlString);
 }
 
 /**
