@@ -11,7 +11,7 @@
 
 import { createReadStream, promises as fs } from "node:fs";
 import { createServer } from "node:http";
-import { extname, join, normalize, sep } from "node:path";
+import { dirname, extname, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
@@ -50,6 +50,22 @@ function resolvePath(urlPath) {
   return abs;
 }
 
+/** Recursively list files under `dir`, as forward-slash paths relative to `dir`. */
+async function listFilesRecursive(dir, base = dir) {
+  const out = [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const abs = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...(await listFilesRecursive(abs, base)));
+    } else if (entry.isFile()) {
+      out.push(relative(base, abs).split(sep).join("/"));
+    }
+  }
+  return out;
+}
+
 function baseHeaders(extra = {}) {
   return {
     // Let the deep-path service worker control the whole origin.
@@ -82,6 +98,27 @@ const server = createServer(async (req, res) => {
     res.writeHead(403, baseHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     res.end("Forbidden");
     return;
+  }
+
+  // Auto-generate a manifest.json for a directory (the app file list) when no
+  // static one is present. Lets the browser enumerate app files (e.g. webApp/).
+  if (decodeURIComponent(urlPath.split("?")[0]).endsWith("/manifest.json")) {
+    const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+    if (!exists) {
+      const dirAbs = dirname(filePath);
+      const dirStat = await fs.stat(dirAbs).catch(() => null);
+      if (dirStat?.isDirectory()) {
+        const files = (await listFilesRecursive(dirAbs)).filter((f) => f !== "manifest.json");
+        const body = JSON.stringify({ files });
+        const headers = baseHeaders({
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Length": String(Buffer.byteLength(body)),
+        });
+        res.writeHead(200, headers);
+        res.end(method === "HEAD" ? undefined : body);
+        return;
+      }
+    }
   }
 
   try {

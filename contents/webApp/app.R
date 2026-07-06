@@ -1,80 +1,55 @@
 library(shiny)
+library(bslib)
 
-# SVG histogram (no graphics device — works in WASM).
-hist_svg <- function(n, fill, title, seed = NULL) {
-  if (!is.null(seed)) {
-    set.seed(seed)
-  }
-  h <- hist(rnorm(n), plot = FALSE)
-  width <- 480
-  height <- 360
-  pad <- 40
-  plotW <- width - 2 * pad
-  plotH <- height - 2 * pad
-  maxcount <- max(h$counts)
-  barW <- plotW / length(h$counts)
+source("helpers.R")
+counties <- readRDS("data/counties.rds")
+library(maps)
+library(mapproj)
 
-  bars <- vapply(seq_along(h$counts), function(i) {
-    barH <- if (maxcount > 0) (h$counts[i] / maxcount) * plotH else 0
-    x0 <- pad + (i - 1) * barW
-    y0 <- pad + plotH - barH
-    sprintf(
-      '<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" fill="%s"/>',
-      x0, y0, barW * 0.92, barH, fill
-    )
-  }, character(1))
+# User interface ----
+ui <- page_sidebar(
+  title = "censusVis",
 
-  sprintf(
-    paste0(
-      '<svg xmlns="http://www.w3.org/2000/svg" width="%1$d" height="%2$d" ',
-      'viewBox="0 0 %1$d %2$d" role="img">',
-      '<text x="%3$.0f" y="24" text-anchor="middle" font-family="sans-serif" ',
-      'font-size="14">%8$s</text>',
-      '<rect x="%4$d" y="%4$d" width="%5$d" height="%6$d" fill="none" stroke="#ccc"/>',
-      "%7$s",
-      "</svg>"
+  sidebar = sidebar(
+    helpText(
+      "Create demographic maps with information from the 2010 US Census."
     ),
-    width,
-    height,
-    width / 2,
-    pad,
-    plotW,
-    plotH,
-    paste(bars, collapse = ""),
-    title
-  )
-}
-
-ui <- fluidPage(
-  titlePanel("Hello Shiny!"),
-  sidebarLayout(
-    sidebarPanel(
-      numericInput(
-        inputId = "num",
-        label = "Number of observations",
-        value = 500,
-        min = 1,
-        max = 1000
-      )
+    selectInput(
+      "var",
+      label = "Choose a variable to display",
+      choices =
+        c(
+          "Percent White",
+          "Percent Black",
+          "Percent Hispanic",
+          "Percent Asian"
+        ),
+      selected = "Percent White"
     ),
-    mainPanel(
-      htmltools::HTML(hist_svg(500, "#3DA35D", "Histogram A (static SVG)", seed = 42)),
-      tags$hr(),
-      textOutput("numValue"),
-      tags$hr(),
-      uiOutput("reactiveHist")
+    sliderInput(
+      "range",
+      label = "Range of interest:",
+      min = 0,
+      max = 100,
+      value = c(0, 100)
     )
-  )
+  ),
+
+  card(plotOutput("map"))
 )
 
+# Server logic ----
 server <- function(input, output) {
-  output$numValue <- renderText({
-    input$num
-  })
+  output$map <- renderPlot({
+    data <- switch(input$var,
+                   "Percent White" = counties$white,
+                   "Percent Black" = counties$black,
+                   "Percent Hispanic" = counties$hispanic,
+                   "Percent Asian" = counties$asian)
 
-  output$reactiveHist <- renderUI({
-    htmltools::HTML(hist_svg(input$num, "#E45756", "Histogram B (reactive SVG)"))
+    percent_map(var = data, color = "darkgreen", legend.title = "Percentage of Population", max = input$range[2], min = input$range[1])
   })
 }
 
+# Run app ----
 shinyApp(ui, server)
