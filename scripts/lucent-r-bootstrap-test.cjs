@@ -1,13 +1,13 @@
 /**
  * Node repro of Lucent R.wasm bootstrap.
- * Usage: node site/scripts/lucent-r-bootstrap-test.cjs [lucent|lucent-callmain|lucent-with-lib|rtester]
+ * Usage: node site/scripts/lucent-r-bootstrap-test.cjs [lucent|lucent-initr|check-shiny-patch|...]
  */
 const fsp = require("node:fs");
 const path = require("node:path");
 
 const siteDir = path.resolve(__dirname, "..");
 const prefix = process.env.PREFIX ?? path.join(siteDir, "..", "_env-wasm");
-const hostRHome = path.join(prefix, "lib", "R");
+const hostRHome = process.env.R_HOME_TREE ?? path.join(prefix, "lib", "R");
 const rExecDir = path.join(hostRHome, "bin", "exec");
 const rLibDir = path.join(hostRHome, "lib");
 const prefixLibDir = path.join(prefix, "lib");
@@ -161,6 +161,21 @@ tryCatch({
 }, error = function(e) cat("[probe] error:", conditionMessage(e), "\\n"))
 `;
 
+const shinyWasmPlotPatchCheck = `
+suppressPackageStartupMessages(library(shiny))
+drawBody <- deparse(body(getFromNamespace("drawPlot", "shiny")))
+resizeBody <- deparse(body(getFromNamespace("resizeSavedPlot", "shiny")))
+publishBody <- deparse(body(getFromNamespace("plotPublishPng", "shiny")))
+ok <- all(
+  any(grepl("onPlotDevice", drawBody)),
+  any(grepl("plotImgSrc", drawBody)),
+  any(grepl("plotImgHasSrc", resizeBody)),
+  any(grepl("plotVfsCacheDir", publishBody))
+)
+cat("[check] shiny wasm plot patch:", ok, "\\n")
+if (!ok) quit(status = 1)
+`;
+
 let glue = fsp.readFileSync(path.join(rExecDir, "R"), "utf8");
 const env = mode === "rtester" ? { R_HOME: wasmRHome } : rEnvLucent();
 glue = glue.replace("var ENV={};", `var ENV=${JSON.stringify(env)};`);
@@ -221,6 +236,10 @@ ${plotProbe}`);
       const status = Module.initR(["--no-restore", "--no-save", "--vanilla"]);
       console.log("[test] initR status:", status);
       Module.evalR(plotProbe);
+    } else if (mode === "check-shiny-patch") {
+      const status = Module.initR(["--no-restore", "--no-save", "--vanilla"]);
+      console.log("[test] initR status:", status);
+      Module.evalR(shinyWasmPlotPatchCheck);
     } else {
       const status = Module.callMain(["--no-restore", "--no-save", "-e", "2+4"]);
       console.log("[test] bootstrap callMain status:", status);

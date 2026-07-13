@@ -48,7 +48,7 @@ server <- function(input, output) {
                    "Percent Asian" = counties$asian)
 
     percent_map(var = data, color = "darkgreen", legend.title = "Percentage of Population", max = input$range[2], min = input$range[1])
-  })
+  }, width = 800, height = 600, execOnResize = TRUE)
 }
 
 # Run app ----
