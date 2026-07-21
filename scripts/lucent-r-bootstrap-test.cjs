@@ -6,24 +6,36 @@ const fsp = require("node:fs");
 const path = require("node:path");
 
 const siteDir = path.resolve(__dirname, "..");
-const prefix = process.env.PREFIX ?? path.join(siteDir, "..", "_env-wasm");
-const hostRHome = process.env.R_HOME_TREE ?? path.join(prefix, "lib", "R");
+const hostPrefixDir = process.env.PREFIX ?? path.join(siteDir, "_env-wasm");
+const hostRHome = process.env.R_HOME_TREE ?? path.join(hostPrefixDir, "lib", "R");
 const rExecDir = path.join(hostRHome, "bin", "exec");
 const rLibDir = path.join(hostRHome, "lib");
-const prefixLibDir = path.join(prefix, "lib");
+const prefixLibDir = path.join(hostPrefixDir, "lib");
 const mode = process.argv[2] ?? "lucent";
-const wasmRHome = mode === "rtester" ? "/R" : "/R_HOME";
+const wasmRHome = mode === "rtester" ? "/R" : "/lib/R";
+
+const VFS_SKIP = new Set([`${wasmRHome}/etc/ldpaths`, `${wasmRHome}/etc/Makeconf`]);
 
 function createLocateFile() {
   return (file) => {
-    const base = path.basename(file);
-    for (const dir of [prefixLibDir, rExecDir, rLibDir]) {
-      const candidate = path.join(dir, base);
+    const fileBase = path.basename(file);
+    if (fileBase.endsWith(".wasm")) {
+      return path.join(rExecDir, "R.wasm");
+    }
+    const pkgMatch = file.match(/\/library\/([^/]+)\/libs\/([^/]+)$/);
+    if (pkgMatch) {
+      const candidate = path.join(hostRHome, "library", pkgMatch[1], "libs", pkgMatch[2]);
       if (fsp.existsSync(candidate)) {
         return candidate;
       }
     }
-    return path.join(rExecDir, base);
+    for (const dir of [prefixLibDir, rExecDir, rLibDir]) {
+      const candidate = path.join(dir, fileBase);
+      if (fsp.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return path.join(rLibDir, fileBase);
   };
 }
 
@@ -127,16 +139,29 @@ Module["callMain"]=shinyForgeCallMain;`;
   return glue.replace('Module["callMain"]=callMain;', patch);
 }
 
-function copyTree(module, srcRoot, dstRoot) {
+function copyTree(module, srcRoot, dstRoot, skip = new Set()) {
   module.FS.mkdirTree(dstRoot);
   for (const entry of fsp.readdirSync(srcRoot, { withFileTypes: true })) {
     const src = path.join(srcRoot, entry.name);
-    const dst = `${dstRoot}/${entry.name}`;
+    const dst = `${dstRoot}/${entry.name}`.replace(/\/+/g, "/");
     if (entry.isDirectory()) {
-      copyTree(module, src, dst);
+      copyTree(module, src, dst, skip);
     } else if (entry.isFile()) {
+      if (skip.has(dst)) {
+        continue;
+      }
       module.FS.writeFile(dst, fsp.readFileSync(src));
     }
+  }
+}
+
+function mountRHomeLibToSlashLib(module) {
+  for (const entry of fsp.readdirSync(rLibDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".so")) {
+      continue;
+    }
+    module.FS.mkdirTree("/lib");
+    module.FS.writeFile(`/lib/${entry.name}`, fsp.readFileSync(path.join(rLibDir, entry.name)));
   }
 }
 
@@ -198,17 +223,20 @@ var Module = {
   locateFile: createLocateFile(),
   preRun: [
     () => {
-      copyTree(Module, hostRHome, wasmRHome);
-      if (mode === "rtester" || mode === "lucent-with-lib") {
+      if (mode === "rtester") {
+        copyTree(Module, hostRHome, wasmRHome);
         copyTree(Module, rLibDir, "/lib");
+        return;
       }
+      copyTree(Module, hostPrefixDir, "/", VFS_SKIP);
+      mountRHomeLibToSlashLib(Module);
     },
   ],
   onAbort(reason) {
     console.error("[test] abort:", reason);
   },
   onRuntimeInitialized() {
-    console.log(`[test] mode=${mode} R_HOME=${wasmRHome}`);
+    console.log(`[test] mode=${mode} R_HOME=${wasmRHome} prefix=${hostPrefixDir}`);
     if (mode === "lucent-callmain") {
       const status = Module.callMain(["--no-restore", "--no-save", "-e", plotProbe]);
       console.log("[test] callMain status:", status);

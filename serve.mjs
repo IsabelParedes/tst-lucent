@@ -3,7 +3,7 @@
 //
 // Its one job beyond plain file serving is to send `Service-Worker-Allowed: /`
 // so the transport service worker installed deep under
-// /R_HOME/library/httpuv/www/httpuv-sw.js can claim the site root (and thus the
+// /_env-wasm/lib/R/library/httpuv/www/httpuv-sw.js can claim the site root (and thus the
 // app shell at /contents/ and the virtual Shiny app URLs). `python3 -m
 // http.server` cannot set that header, which is why this exists.
 //
