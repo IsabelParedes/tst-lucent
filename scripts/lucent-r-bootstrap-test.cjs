@@ -166,11 +166,12 @@ suppressPackageStartupMessages(library(shiny))
 drawBody <- deparse(body(getFromNamespace("drawPlot", "shiny")))
 resizeBody <- deparse(body(getFromNamespace("resizeSavedPlot", "shiny")))
 publishBody <- deparse(body(getFromNamespace("plotPublishPng", "shiny")))
-ok <- all(
-  any(grepl("onPlotDevice", drawBody)),
-  any(grepl("plotImgSrc", drawBody)),
+fileUrlBody <- deparse(body(ShinySession$public_methods$fileUrl))
+ok <- all(  
+  any(grepl("plotPublishPng", drawBody)),
   any(grepl("plotImgHasSrc", resizeBody)),
-  any(grepl("plotVfsCacheDir", publishBody))
+  any(grepl("wasmPublishFileUrl", publishBody)),
+  any(grepl("wasmPublishFileUrl", fileUrlBody))
 )
 cat("[check] shiny wasm plot patch:", ok, "\\n")
 if (!ok) quit(status = 1)

@@ -28,6 +28,6 @@ echo "[sync-transport] Copying inst/www -> $R_HOME_WWW"
 cp -f "$INST_WWW"/* "$R_HOME_WWW"/
 
 echo "[sync-transport] Regenerating VFS manifest"
-"$SCRIPT_DIR/create_manifest.sh"
+python3 "$SCRIPT_DIR/create_manifest.py"
 
 echo "[sync-transport] Done. Rebuild Lucent (site/lucent: npm run build) if needed, then: npm run serve"
