@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Generate a VFS manifest for the wasm conda prefix under site/.
+"""Generate manifests for the site/ harness.
 
-Manifest paths are absolute VFS locations (e.g. /lib/R/library/shiny/...). The
-prefix tree is mounted at the Emscripten filesystem root; host-side fetching
-maps each path onto the host prefix directory (default site/_env-wasm).
+1. VFS manifest for the wasm conda prefix (`_env-wasm-manifest.json`).
+   Paths are absolute VFS locations (e.g. /lib/R/library/shiny/...). The
+   prefix tree is mounted at the Emscripten filesystem root; host-side fetching
+   maps each path onto the host prefix directory (default site/_env-wasm).
+
+2. App file list for Lucent (`webApp/manifest.json`).
+   Paths are relative to the app directory (e.g. app.R, data/counties.rds).
+   Browsers cannot enumerate directories over HTTP; Lucent fetches this list.
 """
 
 from __future__ import annotations
@@ -21,8 +26,16 @@ def default_prefix_dir() -> Path:
     return site_dir() / "_env-wasm"
 
 
-def default_out() -> Path:
+def default_prefix_out() -> Path:
     return site_dir() / "_env-wasm-manifest.json"
+
+
+def default_app_dir() -> Path:
+    return site_dir() / "webApp"
+
+
+def default_app_out() -> Path:
+    return default_app_dir() / "manifest.json"
 
 
 # Host paths relative to the prefix root that must not appear in the VFS manifest.
@@ -42,7 +55,14 @@ def vfs_path(prefix_dir: Path, path: Path) -> str:
     return f"/{rel}"
 
 
-def create_manifest(prefix_dir: Path, out: Path) -> int:
+def write_manifest(out: Path, files: list[str]) -> int:
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"files": files}, indent=2) + "\n")
+    print(f"Wrote {len(files)} files to {out}")
+    return len(files)
+
+
+def create_prefix_manifest(prefix_dir: Path, out: Path) -> int:
     if not prefix_dir.is_dir():
         raise SystemExit(f"ERROR: prefix dir does not exist: {prefix_dir}")
 
@@ -51,15 +71,24 @@ def create_manifest(prefix_dir: Path, out: Path) -> int:
         for p in prefix_dir.rglob("*")
         if p.is_file() and not is_excluded(prefix_dir, p)
     )
+    return write_manifest(out, files)
 
-    out.write_text(json.dumps({"files": files}, indent=2) + "\n")
-    print(f"Wrote {len(files)} files to {out}")
-    return len(files)
+
+def create_app_manifest(app_dir: Path, out: Path) -> int:
+    if not app_dir.is_dir():
+        raise SystemExit(f"ERROR: app dir does not exist: {app_dir}")
+
+    files = sorted(
+        p.relative_to(app_dir).as_posix()
+        for p in app_dir.rglob("*")
+        if p.is_file() and p.name != "manifest.json"
+    )
+    return write_manifest(out, files)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate a JSON manifest of VFS paths for the wasm prefix tree.",
+        description="Generate wasm prefix and/or webApp file manifests.",
     )
     parser.add_argument(
         "--prefix-dir",
@@ -70,15 +99,43 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out",
         type=Path,
-        default=default_out(),
-        help=f"Output manifest path (default: {default_out()})",
+        default=default_prefix_out(),
+        help=f"Wasm prefix manifest path (default: {default_prefix_out()})",
+    )
+    parser.add_argument(
+        "--app-dir",
+        type=Path,
+        default=default_app_dir(),
+        help=f"Shiny app directory to scan (default: {default_app_dir()})",
+    )
+    parser.add_argument(
+        "--app-out",
+        type=Path,
+        default=default_app_out(),
+        help=f"App manifest path (default: {default_app_out()})",
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--prefix-only",
+        action="store_true",
+        help="Only write the wasm prefix manifest",
+    )
+    group.add_argument(
+        "--app-only",
+        action="store_true",
+        help="Only write the webApp manifest",
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    create_manifest(args.prefix_dir, args.out)
+    do_prefix = not args.app_only
+    do_app = not args.prefix_only
+    if do_prefix:
+        create_prefix_manifest(args.prefix_dir, args.out)
+    if do_app:
+        create_app_manifest(args.app_dir, args.app_out)
 
 
 if __name__ == "__main__":

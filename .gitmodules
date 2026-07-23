@@ -1,0 +1,3 @@
+[submodule "lucent"]
+	path = lucent
+	url = git@github.com:IsabelParedes/lucent.git

@@ -1,8 +1,0 @@
-library(grDevices)
-library(graphics)
-tf <- tempfile(fileext = ".png")
-png(tf)
-plot.new()
-dev.off()
-stopifnot(file.exists(tf))
-cat("plot.new OK\n")

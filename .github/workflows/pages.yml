@@ -1,0 +1,68 @@
+name: Deploy Lucent Pages
+
+on:
+  push:
+    branches: main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: latest
+          cache: npm
+          cache-dependency-path: lucent/package-lock.json
+
+      - name: Unpack wasm prefix
+        run: |
+          set -euo pipefail
+
+          ARCHIVE=wasm-prefix.tar.zst
+
+          echo "Unpacking $ARCHIVE"
+          zstd -d -c "$ARCHIVE" | tar -x
+          test -d _env-wasm/bin
+          test -f _env-wasm-manifest.json
+
+      - name: Build Lucent
+        run: |
+          npm ci --prefix lucent
+          npm run build --prefix lucent
+
+      - name: Assemble Pages tree
+        run: |
+          chmod +x prepare-pages.sh
+          ./prepare-pages.sh
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

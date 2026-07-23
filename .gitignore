@@ -1,4 +1,6 @@
 _env-wasm
 _env-wasm-manifest.json
+_pages
 node_modules
-lucent
+httpuv-sw.js
+httpuv-sw.js.map

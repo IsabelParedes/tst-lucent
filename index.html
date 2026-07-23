@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Emscripten-Forge Shiny Test</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+
+    <main class="app-layout">
+        <iframe
+          id="app-frame"
+          class="app-frame"
+          title="Viewer"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        ></iframe>
+    </main>
+    <script>
+      // Resolve against the site root so project GitHub Pages mounts
+      // (username.github.io/repo/) work without absolute "/..." paths.
+      const siteRoot = new URL("./", window.location.href);
+      globalThis.__LUCENT__ = {
+        transportBaseUrl: new URL("_env-wasm/lib/R/library/httpuv/www/", siteRoot).href,
+        serviceWorkerUrl: new URL("httpuv-sw.js", siteRoot).href,
+        rRuntimeBaseUrl: siteRoot.href,
+        hostPrefixDir: "_env-wasm",
+        shinyBaseUrl: siteRoot.href,
+      };
+    </script>
+    <script type="module" src="./lucent/dist/runApp.js"></script>
+  </body>
+</html>

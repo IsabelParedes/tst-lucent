@@ -8,7 +8,7 @@
   "main": "index.html",
   "scripts": {
     "serve": "node serve.mjs",
-    "sync-transport": "./sync-transport.sh",
+    "prepare-pages": "./prepare-pages.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {

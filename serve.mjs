@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Tiny static dev server for the site/ test harness.
 //
-// Its one job beyond plain file serving is to send `Service-Worker-Allowed: /`
-// so the transport service worker installed deep under
-// /_env-wasm/lib/R/library/httpuv/www/httpuv-sw.js can claim the site root (and thus the
-// app shell at /contents/ and the virtual Shiny app URLs). `python3 -m
-// http.server` cannot set that header, which is why this exists.
+// Beyond plain file serving it:
+// 1. Aliases `/httpuv-sw.js` → the canonical copy under
+//    `/_env-wasm/lib/R/library/httpuv/www/` so Lucent can register a root-scoped
+//    service worker (required on hosts like GitHub Pages that cannot send
+//    `Service-Worker-Allowed`).
+// 2. Still sends `Service-Worker-Allowed: /` so a deep-path SW registration
+//    keeps working during local debugging.
 //
 // Usage: node serve.mjs [port]   (defaults to 9008, or $PORT)
 
@@ -16,6 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL(".", import.meta.url));
 const PORT = Number(process.argv[2] ?? process.env.PORT ?? 9008);
+
+const DEEP_SW_REL = join("_env-wasm", "lib", "R", "library", "httpuv", "www", "httpuv-sw.js");
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -50,6 +54,32 @@ function resolvePath(urlPath) {
   return abs;
 }
 
+/**
+ * Map public URL paths onto files. Root SW aliases fall through to the
+ * canonical copy under the wasm prefix when no physical root file exists.
+ */
+function resolveFile(urlPath) {
+  const pathname = decodeURIComponent(urlPath.split("?")[0]);
+  if (pathname === "/httpuv-sw.js" || pathname === "/httpuv-sw.js.map") {
+    const rootCopy = resolvePath(pathname);
+    return { preferred: rootCopy, fallback: join(ROOT, DEEP_SW_REL + (pathname.endsWith(".map") ? ".map" : "")) };
+  }
+  return { preferred: resolvePath(urlPath), fallback: null };
+}
+
+async function firstExisting(paths) {
+  for (const p of paths) {
+    if (!p) continue;
+    try {
+      const stat = await fs.stat(p);
+      if (stat.isFile()) return { path: p, stat };
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
 /** Recursively list files under `dir`, as forward-slash paths relative to `dir`. */
 async function listFilesRecursive(dir, base = dir) {
   const out = [];
@@ -68,7 +98,7 @@ async function listFilesRecursive(dir, base = dir) {
 
 function baseHeaders(extra = {}) {
   return {
-    // Let the deep-path service worker control the whole origin.
+    // Let a deep-path service worker control the whole origin (local fallback).
     "Service-Worker-Allowed": "/",
     // Dev server: never cache, so rebuilds are picked up immediately.
     "Cache-Control": "no-store",
@@ -86,15 +116,8 @@ const server = createServer(async (req, res) => {
 
   const urlPath = req.url ?? "/";
 
-  // Land on the app shell instead of a bare directory listing.
-  if (urlPath === "/" || urlPath === "") {
-    res.writeHead(302, baseHeaders({ Location: "/contents/" }));
-    res.end();
-    return;
-  }
-
-  let filePath = resolvePath(urlPath);
-  if (!filePath) {
+  const { preferred, fallback } = resolveFile(urlPath);
+  if (!preferred && !fallback) {
     res.writeHead(403, baseHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     res.end("Forbidden");
     return;
@@ -102,10 +125,10 @@ const server = createServer(async (req, res) => {
 
   // Auto-generate a manifest.json for a directory (the app file list) when no
   // static one is present. Lets the browser enumerate app files (e.g. webApp/).
-  if (decodeURIComponent(urlPath.split("?")[0]).endsWith("/manifest.json")) {
-    const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+  if (decodeURIComponent(urlPath.split("?")[0]).endsWith("/manifest.json") && preferred) {
+    const exists = await fs.stat(preferred).then(() => true).catch(() => false);
     if (!exists) {
-      const dirAbs = dirname(filePath);
+      const dirAbs = dirname(preferred);
       const dirStat = await fs.stat(dirAbs).catch(() => null);
       if (dirStat?.isDirectory()) {
         const files = (await listFilesRecursive(dirAbs)).filter((f) => f !== "manifest.json");
@@ -122,15 +145,23 @@ const server = createServer(async (req, res) => {
   }
 
   try {
-    let stat = await fs.stat(filePath);
-    if (stat.isDirectory()) {
-      filePath = join(filePath, "index.html");
-      stat = await fs.stat(filePath);
+    let hit = await firstExisting([preferred, fallback]);
+    if (!hit && preferred) {
+      // Directory → index.html (only for preferred path; aliases are files).
+      const dirStat = await fs.stat(preferred).catch(() => null);
+      if (dirStat?.isDirectory()) {
+        const indexPath = join(preferred, "index.html");
+        const indexStat = await fs.stat(indexPath);
+        hit = { path: indexPath, stat: indexStat };
+      }
+    }
+    if (!hit) {
+      throw new Error("not found");
     }
 
     const headers = baseHeaders({
-      "Content-Type": contentType(filePath),
-      "Content-Length": String(stat.size),
+      "Content-Type": contentType(hit.path),
+      "Content-Length": String(hit.stat.size),
     });
 
     res.writeHead(200, headers);
@@ -138,7 +169,7 @@ const server = createServer(async (req, res) => {
       res.end();
       return;
     }
-    createReadStream(filePath).pipe(res);
+    createReadStream(hit.path).pipe(res);
   } catch {
     res.writeHead(404, baseHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     res.end(`Not Found: ${urlPath}`);
@@ -148,6 +179,7 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   const root = ROOT.replace(new RegExp(`${sep}$`), "");
   console.log(`[serve] site root: ${root}`);
+  console.log(`[serve] /httpuv-sw.js → ${DEEP_SW_REL} (if no root copy)`);
   console.log(`[serve] Service-Worker-Allowed: / on every response`);
-  console.log(`[serve] open http://localhost:${PORT}/contents/`);
+  console.log(`[serve] open http://localhost:${PORT}/`);
 });
