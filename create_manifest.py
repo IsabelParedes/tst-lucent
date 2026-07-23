@@ -39,15 +39,32 @@ def default_app_out() -> Path:
 
 
 # Host paths relative to the prefix root that must not appear in the VFS manifest.
-MANIFEST_EXCLUDE_DIRS = ("conda-meta", "etc/conda")
+MANIFEST_EXCLUDE_DIRS = (
+    "conda-meta",
+    "etc/conda",
+    # Timezone DB + R build assets; not required for this Shiny wasm app, and a
+    # large chunk of the GitHub Pages mount flood.
+    "lib/R/share",
+)
 MANIFEST_EXCLUDE_FILES = (".mambarc",)
+
+# Under lib/R/library/<pkg>/: vignettes/docs (e.g. jsonlite/doc/*.html) are unused
+# at runtime but add hundreds of fetches that often 503 on GitHub Pages.
+LIBRARY_DOC_DIRS = frozenset({"doc", "help", "html"})
 
 
 def is_excluded(prefix_dir: Path, path: Path) -> bool:
     rel = path.relative_to(prefix_dir).as_posix()
     if rel in MANIFEST_EXCLUDE_FILES:
         return True
-    return any(rel == name or rel.startswith(f"{name}/") for name in MANIFEST_EXCLUDE_DIRS)
+    if any(rel == name or rel.startswith(f"{name}/") for name in MANIFEST_EXCLUDE_DIRS):
+        return True
+    parts = rel.split("/")
+    # lib/R/library/<pkg>/.../(doc|help|html)/...
+    if len(parts) >= 5 and parts[0:3] == ["lib", "R", "library"]:
+        if any(seg in LIBRARY_DOC_DIRS for seg in parts[4:]):
+            return True
+    return False
 
 
 def vfs_path(prefix_dir: Path, path: Path) -> str:
