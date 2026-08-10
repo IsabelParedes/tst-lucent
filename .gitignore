@@ -1,5 +1,6 @@
-_env-wasm
-_env-wasm-manifest.json
+_prefix-wasm
+packages
+runtime
 _pages
 node_modules
 httpuv-sw.js
