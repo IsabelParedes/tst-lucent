@@ -3,11 +3,6 @@
 # the file 'LICENSE', which is part of this source code.
 #
 
-# renv environment (non-volatile dependencies version)
-if (!("renv" %in% installed.packages())) install.packages("renv")
-if (any(unlist(gregexpr("renv",.libPaths(),fixed=T))<0)) # if renv is not yet "activated"
-    renv::load()
-
 library(shiny)
 library(plotly)
 library(ggplot2)
