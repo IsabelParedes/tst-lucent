@@ -1,7 +1,0 @@
-{
-  "files": [
-    "app.R",
-    "data/counties.rds",
-    "helpers.R"
-  ]
-}
