@@ -3,6 +3,7 @@ name: Deploy Lucent Pages
 on:
   push:
     branches: main
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -23,23 +24,25 @@ jobs:
         with:
           submodules: true
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Install micromamba
+        uses: mamba-org/setup-micromamba@v3
         with:
-          node-version: latest
-          cache: npm
-          cache-dependency-path: lucent/package-lock.json
+          environment-file: env_wasm_build.yaml
+          init-shell: bash
 
-      - name: Unpack wasm prefix
+      - name: Pack wasm env (empack)
+        shell: bash -l {0}
         run: |
           set -euo pipefail
 
-          ARCHIVE=wasm-prefix.tar.zst
+          micromamba create -f env_wasm_run.yaml -p ./_prefix-wasm \
+            --platform=emscripten-wasm32
 
-          echo "Unpacking $ARCHIVE"
-          zstd -d -c "$ARCHIVE" | tar -x
-          test -d _env-wasm/bin
-          test -f _env-wasm-manifest.json
+          chmod +x pack-empack.sh
+          ./pack-empack.sh
+          test -f packages/empack_env_meta.json
+          test -f runtime/bin/Rmain.js
+          test -f runtime/bin/Rmain.wasm
 
       - name: Build Lucent
         run: |
@@ -58,6 +61,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
