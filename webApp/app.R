@@ -4,87 +4,42 @@ library(thematic)
 
 thematic_shiny(font = "auto")
 
-# Define UI for random distribution app ----
-# Sidebar layout with input and output definitions ----
+# k-means only works with numerical variables,
+# so don't give the user the option to select
+# a categorical variable
+vars <- setdiff(names(iris), "Species")
+
 ui <- page_sidebar(
   input_dark_mode(mode = "dark"),
-
-  # App title ----
-  title ="Tabsets",
-
-  # Sidebar panel for inputs ----
+  title = "Iris k-means clustering",
   sidebar = sidebar(
-
-    # Input: Select the random distribution type ----
-    radioButtons("dist", "Distribution type:",
-                 c("Normal" = "norm",
-                   "Uniform" = "unif",
-                   "Log-normal" = "lnorm",
-                   "Exponential" = "exp")),
-    # br() element to introduce extra vertical spacing ----
-    br(),
-    # Input: Slider for the number of observations to generate ----
-    sliderInput("n",
-                "Number of observations:",
-                value = 500,
-                min = 1,
-                max = 1000)
+    selectInput("xcol", "X Variable", vars),
+    selectInput("ycol", "Y Variable", vars, selected = vars[[2]]),
+    numericInput("clusters", "Cluster count", 3, min = 1, max = 9)
   ),
-
-  # Main panel for displaying outputs ----
-  # Output: A tabset that combines three panels ----
-  navset_card_underline(
-    title = "Visualizations",
-    # Panel with plot ----
-    nav_panel("Plot", plotOutput("plot")),
-
-    # Panel with summary ----
-    nav_panel("Summary", verbatimTextOutput("summary")),
-
-    # Panel with table ----
-    nav_panel("Table", tableOutput("table"))
-  )
+  card(plotOutput("plot1"))
 )
 
-# Define server logic for random distribution app ----
-server <- function(input, output) {
+server <- function(input, output, session) {
 
-  # Reactive expression to generate the requested distribution ----
-  # This is called whenever the inputs change. The output functions
-  # defined below then use the value computed from this expression
-  d <- reactive({
-    dist <- switch(input$dist,
-                   norm = rnorm,
-                   unif = runif,
-                   lnorm = rlnorm,
-                   exp = rexp,
-                   rnorm)
-
-    dist(input$n)
+  # Combine the selected variables into a new data frame
+  selectedData <- reactive({
+    iris[, c(input$xcol, input$ycol)]
   })
 
-  # Generate a plot of the data ----
-  # Also uses the inputs to build the plot label. Note that the
-  # dependencies on the inputs and the data reactive expression are
-  # both tracked, and all expressions are called in the sequence
-  # implied by the dependency graph.
-  output$plot <- renderPlot({
-    dist <- input$dist
-    n <- input$n
-
-    hist(d(),
-         main = paste("r", dist, "(", n, ")", sep = ""),
-         col = "#ABB557")
+  clusters <- reactive({
+    kmeans(selectedData(), input$clusters)
   })
 
-  # Generate a summary of the data ----
-  output$summary <- renderPrint({
-    summary(d())
-  })
+  output$plot1 <- renderPlot({
+    palette(c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+      "#FF7F00", "#FFFF33", "#A65628", "#F781BF", "#999999"))
 
-  # Generate an HTML table view of the data ----
-  output$table <- renderTable({
-    d()
+    par(mar = c(5.1, 4.1, 0, 1))
+    plot(selectedData(),
+         col = clusters()$cluster,
+         pch = 20, cex = 3)
+    points(clusters()$centers, pch = 4, cex = 4, lwd = 4)
   })
 
 }
