@@ -1,0 +1,1 @@
+LAGUN_PATH=getwd()

@@ -1,0 +1,18 @@
+/* override table no-wrap, allows to adapt cell to text in a table */
+/* BEGIN TABLE */
+
+.wy-table-responsive table td, .wy-table-responsive table th {
+    white-space: normal;
+}
+
+/* END TABLE */
+
+
+/* Classes for thumbnail directive (sphixcontrib.images extension) */
+/* BEGIN IMAGES */
+
+.framed img { 
+    border: 1px solid gray;
+}
+
+/* END IMAGES */

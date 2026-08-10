@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Généré par Microsoft Visio, SVG Export menuOptimize_diag2.svg Page-1 -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:ev="http://www.w3.org/2001/xml-events"
+		width="11.7205in" height="13.0178in" viewBox="0 0 843.877 937.278" xml:space="preserve" color-interpolation-filters="sRGB"
+		class="st13">
+	<style type="text/css">
+	<![CDATA[
+		.st1 {visibility:visible}
+		.st2 {fill:#5b9bd5;fill-opacity:0.25;filter:url(#filter_2);stroke:#5b9bd5;stroke-opacity:0.25}
+		.st3 {fill:#ffffff;fill-opacity:0;stroke:#40709c;stroke-width:0.75}
+		.st4 {fill:#41719c;font-family:Calibri;font-size:1.5em;font-stretch:semi-expanded}
+		.st5 {fill:#41719c;font-family:Calibri;font-size:1.00001em;font-stretch:semi-expanded}
+		.st6 {fill:#ffffff;stroke:#759fcc;stroke-width:0.75}
+		.st7 {fill:#759fcc;font-family:Calibri;font-size:1.16666em}
+		.st8 {font-size:1em}
+		.st9 {marker-end:url(#mrkr4-170);stroke:#41719c;stroke-linecap:round;stroke-linejoin:round;stroke-width:2}
+		.st10 {fill:#41719c;fill-opacity:1;stroke:#41719c;stroke-opacity:1;stroke-width:0.52631578947368}
+		.st11 {marker-end:url(#mrkr4-263);stroke:#5b9bd5;stroke-linecap:round;stroke-linejoin:round;stroke-width:2}
+		.st12 {fill:#5b9bd5;fill-opacity:1;stroke:#5b9bd5;stroke-opacity:1;stroke-width:0.52631578947368}
+		.st13 {fill:none;fill-rule:evenodd;font-size:12px;overflow:visible;stroke-linecap:square;stroke-miterlimit:3}
+		svg { pointer-events: none; }
+	]]>
+	</style>
+
+	<defs id="Patterns_And_Gradients">
+		<linearGradient id="grad0-20" x1="0" y1="0" x2="1" y2="0" gradientTransform="rotate(90 0.5 0.5)">
+			<stop offset="0.01" stop-color="#eeeeee" stop-opacity="1"/>
+			<stop offset="0.5" stop-color="#d7d7d7" stop-opacity="1"/>
+			<stop offset="1" stop-color="#eeeeee" stop-opacity="1"/>
+		</linearGradient>
+	</defs>
+	<defs id="Markers">
+		<g id="lend4">
+			<path d="M 2 1 L 0 0 L 2 -1 L 2 1 " style="stroke:none"/>
+		</g>
+		<marker id="mrkr4-170" class="st10" refX="-3.8" orient="auto" markerUnits="strokeWidth" overflow="visible">
+			<use xlink:href="#lend4" transform="scale(-1.9,-1.9) "/>
+		</marker>
+		<marker id="mrkr4-263" class="st12" refX="-3.8" orient="auto" markerUnits="strokeWidth" overflow="visible">
+			<use xlink:href="#lend4" transform="scale(-1.9,-1.9) "/>
+		</marker>
+	</defs>
+	<defs id="Filters">
+		<filter id="filter_2">
+			<feGaussianBlur stdDeviation="2"/>
+		</filter>
+	</defs>
+	<g>
+		<title>Page 1</title>
+		<g id="group8-1" transform="translate(39.7944,-185.989)">
+			<title>Sans couleur</title>
+			<g id="group9-2">
+				<title>Feuille.9</title>
+				<g id="shape10-3" transform="translate(2.83465,2.83465)">
+					<title>Feuille.10</title>
+					<g id="shadow10-4" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1"/>
+				</g>
+				<g id="shape9-8">
+					<g id="shadow9-9" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1">
+						<path d="M0 937.28 L391.18 937.28 L782.36 937.28 L782.36 205.39 L391.18 205.39 L0 205.39 L0 937.28 Z"
+								class="st2"/>
+					</g>
+					<path d="M0 937.28 L391.18 937.28 L782.36 937.28 L782.36 205.39 L391.18 205.39 L0 205.39 L0 937.28 Z"
+							class="st3"/>
+				</g>
+			</g>
+			<g id="group11-13" transform="translate(0,-702.123)">
+				<title>Feuille.11</title>
+				<desc>MenuOptimize</desc>
+				<g id="shape12-14">
+					<title>Feuille.12</title>
+					<g id="shadow12-15" transform="matrix(1,0,0,1,0.345598,1.97279)" class="st1"/>
+				</g>
+				<g id="shape11-21">
+					<text x="6" y="927.8" class="st4">MenuOptimize</text>				</g>
+			</g>
+		</g>
+		<g id="group15-24" transform="translate(39.7944,-23.3478)">
+			<title>Sans couleur.15</title>
+			<g id="group16-25">
+				<title>Feuille.16</title>
+				<g id="shape17-26" transform="translate(2.83465,2.83465)">
+					<title>Feuille.17</title>
+					<g id="shadow17-27" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1"/>
+				</g>
+				<g id="shape16-31">
+					<g id="shadow16-32" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1">
+						<path d="M0 937.28 L391.18 937.28 L782.36 937.28 L782.36 800.77 L391.18 800.77 L0 800.77 L0 937.28 Z"
+								class="st2"/>
+					</g>
+					<path d="M0 937.28 L391.18 937.28 L782.36 937.28 L782.36 800.77 L391.18 800.77 L0 800.77 L0 937.28 Z"
+							class="st3"/>
+				</g>
+			</g>
+			<g id="group18-36" transform="translate(0,-106.744)">
+				<title>Feuille.18</title>
+				<desc>Shared</desc>
+				<g id="shape19-37">
+					<title>Feuille.19</title>
+					<g id="shadow19-38" transform="matrix(1,0,0,1,0.345598,1.97279)" class="st1"/>
+				</g>
+				<g id="shape18-43">
+					<text x="6" y="927.8" class="st4">Shared</text>				</g>
+			</g>
+		</g>
+		<g id="group42-46" transform="translate(53.3479,-494.335)">
+			<title>Sans couleur.42</title>
+			<g id="group43-47">
+				<title>Feuille.43</title>
+				<g id="shape44-48" transform="translate(2.83465,2.83465)">
+					<title>Feuille.44</title>
+					<g id="shadow44-49" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1"/>
+				</g>
+				<g id="shape43-53">
+					<g id="shadow43-54" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1">
+						<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+								class="st2"/>
+					</g>
+					<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+							class="st3"/>
+				</g>
+			</g>
+			<g id="group45-58" transform="translate(0,-198.112)">
+				<title>Feuille.45</title>
+				<desc>Unconstrained</desc>
+				<g id="shape46-59">
+					<title>Feuille.46</title>
+					<g id="shadow46-60" transform="matrix(1,0,0,1,0.345598,1.97279)" class="st1"/>
+				</g>
+				<g id="shape45-65">
+					<text x="6" y="928.12" class="st5">Unconstrained</text>				</g>
+			</g>
+		</g>
+		<g id="group57-68" transform="translate(446.398,-232.071)">
+			<title>Sans couleur.57</title>
+			<g id="group58-69">
+				<title>Feuille.58</title>
+				<g id="shape59-70" transform="translate(2.83465,2.83465)">
+					<title>Feuille.59</title>
+					<g id="shadow59-71" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1"/>
+				</g>
+				<g id="shape58-75">
+					<g id="shadow58-76" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1">
+						<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+								class="st2"/>
+					</g>
+					<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+							class="st3"/>
+				</g>
+			</g>
+			<g id="group60-80" transform="translate(0,-198.112)">
+				<title>Feuille.60</title>
+				<desc>Sequential</desc>
+				<g id="shape61-81">
+					<title>Feuille.61</title>
+					<g id="shadow61-82" transform="matrix(1,0,0,1,0.345598,1.97279)" class="st1"/>
+				</g>
+				<g id="shape60-87">
+					<text x="6" y="928.12" class="st5">Sequential</text>				</g>
+			</g>
+		</g>
+		<g id="group79-90" transform="translate(53.3479,-232.071)">
+			<title>Sans couleur.79</title>
+			<g id="group80-91">
+				<title>Feuille.80</title>
+				<g id="shape81-92" transform="translate(2.83465,2.83465)">
+					<title>Feuille.81</title>
+					<g id="shadow81-93" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1"/>
+				</g>
+				<g id="shape80-97">
+					<g id="shadow80-98" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1">
+						<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+								class="st2"/>
+					</g>
+					<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+							class="st3"/>
+				</g>
+			</g>
+			<g id="group82-102" transform="translate(0,-198.112)">
+				<title>Feuille.82</title>
+				<desc>Robust</desc>
+				<g id="shape83-103">
+					<title>Feuille.83</title>
+					<g id="shadow83-104" transform="matrix(1,0,0,1,0.345598,1.97279)" class="st1"/>
+				</g>
+				<g id="shape82-109">
+					<text x="6" y="928.12" class="st5">Robust</text>				</g>
+			</g>
+		</g>
+		<g id="group94-112" transform="translate(446.398,-494.335)">
+			<title>Sans couleur.94</title>
+			<g id="group95-113">
+				<title>Feuille.95</title>
+				<g id="shape96-114" transform="translate(2.83465,2.83465)">
+					<title>Feuille.96</title>
+					<g id="shadow96-115" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1"/>
+				</g>
+				<g id="shape95-119">
+					<g id="shadow95-120" transform="matrix(1,0,0,1,0.3456,1.9728)" class="st1">
+						<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+								class="st2"/>
+					</g>
+					<path d="M0 937.28 L180.14 937.28 L360.28 937.28 L360.28 713.65 L180.14 713.65 L0 713.65 L0 937.28 Z"
+							class="st3"/>
+				</g>
+			</g>
+			<g id="group97-124" transform="translate(0,-198.112)">
+				<title>Feuille.97</title>
+				<desc>Constrained</desc>
+				<g id="shape98-125">
+					<title>Feuille.98</title>
+					<g id="shadow98-126" transform="matrix(1,0,0,1,0.345598,1.97279)" class="st1"/>
+				</g>
+				<g id="shape97-131">
+					<text x="6" y="928.12" class="st5">Constrained</text>				</g>
+			</g>
+		</g>
+		<g id="shape1-134" transform="translate(183.658,-556.576)">
+			<title>Rectangle</title>
+			<desc>Unconstrained</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="8.01" y="904.11" class="st7">Unconstrained</text>		</g>
+		<g id="shape2-137" transform="translate(381.145,-779.631)">
+			<title>Rectangle.2</title>
+			<desc>MenuOptimize</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="7.3" y="904.11" class="st7">MenuOptimize</text>		</g>
+		<g id="shape3-140" transform="translate(576.708,-343.699)">
+			<title>Rectangle.3</title>
+			<desc>Sequential</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="19.7" y="904.11" class="st7">Sequential</text>		</g>
+		<g id="shape13-143" transform="translate(381.145,-45.4038)">
+			<title>Rectangle.13</title>
+			<desc>XinfosChange</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="11.13" y="904.11" class="st7">XinfosChange</text>		</g>
+		<g id="shape26-146" transform="translate(697.706,-241.384)">
+			<title>Rectangle.26</title>
+			<desc>SequentialSolve</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="4.55" y="904.11" class="st7">SequentialSolve</text>		</g>
+		<g id="shape34-149" transform="translate(581.422,-45.4038)">
+			<title>Rectangle.34</title>
+			<desc>DynamicSelect</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="8.07" y="904.11" class="st7">DynamicSelect</text>		</g>
+		<g id="shape40-152" transform="translate(455.711,-241.384)">
+			<title>Rectangle.40</title>
+			<desc>Sequential-Optimizers</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="17.56" y="895.71" class="st7">Sequential-<tspan x="18.94" dy="1.2em" class="st8">Optimizers</tspan></text>		</g>
+		<g id="shape84-156" transform="translate(183.658,-343.699)">
+			<title>Rectangle.84</title>
+			<desc>Robust</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="29.9" y="904.11" class="st7">Robust</text>		</g>
+		<g id="shape85-159" transform="translate(183.658,-241.384)">
+			<title>Rectangle.85</title>
+			<desc>RobustSolve</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="14.74" y="904.11" class="st7">RobustSolve</text>		</g>
+		<g id="shape87-162" transform="translate(304.656,-241.384)">
+			<title>Rectangle.87</title>
+			<desc>RobustAnalysis</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="6.96" y="904.11" class="st7">RobustAnalysis</text>		</g>
+		<g id="shape89-165" transform="translate(226.402,-343.699)">
+			<title>Lien dynamique.89</title>
+			<path d="M7.09 937.28 L7.09 957.25" class="st9"/>
+		</g>
+		<g id="shape90-171" transform="translate(183.658,-381.072)">
+			<title>Lien dynamique.90</title>
+			<path d="M0 937.28 L-71.17 937.28 L-71.17 994.62" class="st9"/>
+		</g>
+		<g id="shape91-176" transform="translate(62.6604,-241.384)">
+			<title>Rectangle.91</title>
+			<desc>RobustDefine</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="11.21" y="904.11" class="st7">RobustDefine</text>		</g>
+		<g id="shape93-179" transform="translate(283.319,-381.072)">
+			<title>Lien dynamique.93</title>
+			<path d="M0 937.28 L71.17 937.28 L71.17 994.62" class="st9"/>
+		</g>
+		<g id="shape99-184" transform="translate(576.708,-605.963)">
+			<title>Rectangle.99</title>
+			<desc>Constrained</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="15.41" y="904.11" class="st7">Constrained</text>		</g>
+		<g id="shape100-187" transform="translate(576.708,-503.647)">
+			<title>Rectangle.100</title>
+			<desc>Constrained-Explore</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="13.27" y="895.71" class="st7">Constrained-<tspan x="28.48" dy="1.2em" class="st8">Explore</tspan></text>		</g>
+		<g id="shape101-191" transform="translate(697.706,-503.647)">
+			<title>Rectangle.101</title>
+			<desc>Constrained-Solve</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="13.27" y="895.71" class="st7">Constrained-<tspan x="34.67" dy="1.2em" class="st8">Solve</tspan></text>		</g>
+		<g id="shape102-195" transform="translate(619.452,-605.963)">
+			<title>Lien dynamique.102</title>
+			<path d="M7.09 937.28 L7.09 957.25" class="st9"/>
+		</g>
+		<g id="shape103-200" transform="translate(576.708,-643.335)">
+			<title>Lien dynamique.103</title>
+			<path d="M0 937.28 L-71.17 937.28 L-71.17 994.62" class="st9"/>
+		</g>
+		<g id="shape104-205" transform="translate(455.711,-503.647)">
+			<title>Rectangle.104</title>
+			<desc>Constrained-Define</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="13.27" y="895.71" class="st7">Constrained-<tspan x="31.14" dy="1.2em" class="st8">Define</tspan></text>		</g>
+		<g id="shape105-209" transform="translate(676.369,-643.335)">
+			<title>Lien dynamique.105</title>
+			<path d="M0 937.28 L71.17 937.28 L71.17 994.62" class="st9"/>
+		</g>
+		<g id="shape132-214" transform="translate(697.706,-271.67)">
+			<title>Lien dynamique.132</title>
+			<path d="M0 930.19 L-134.73 930.19" class="st9"/>
+		</g>
+		<g id="shape133-219" transform="translate(676.369,-381.072)">
+			<title>Lien dynamique.133</title>
+			<path d="M0 937.28 L71.17 937.28 L71.17 994.62" class="st9"/>
+		</g>
+		<g id="shape137-224" transform="translate(430.976,-779.631)">
+			<title>Lien dynamique</title>
+			<path d="M0 937.28 L0 947.91 L195.56 947.91 L195.56 1028.6" class="st9"/>
+		</g>
+		<g id="shape138-229" transform="translate(430.976,-779.631)">
+			<title>Lien dynamique.138</title>
+			<path d="M0 937.28 L0 947.91 L-197.49 947.91 L-197.49 1077.99" class="st9"/>
+		</g>
+		<g id="shape139-234" transform="translate(430.976,-779.631)">
+			<title>Lien dynamique.139</title>
+			<path d="M0 937.28 L0 1238.4 L-110.51 1238.4 A2.3622 2.3622 -180 0 0 -115.23 1238.4 L-197.49 1238.4 L-197.49 1290.86"
+					class="st9"/>
+		</g>
+		<g id="shape140-239" transform="translate(430.976,-779.631)">
+			<title>Lien dynamique.140</title>
+			<path d="M0 937.28 L0 1238.4 L72.2 1238.4 A2.3622 2.3622 0 0 1 76.93 1238.4 L132.74 1238.4 A2.3622 2.3622 0 0 1 137.47
+						 1238.4 L195.56 1238.4 L195.56 1290.86" class="st9"/>
+		</g>
+		<g id="shape143-244" transform="translate(180.868,-45.4038)">
+			<title>Rectangle.143</title>
+			<desc>DynamicSelect-Picker</desc>
+			<rect x="0" y="862.533" width="99.6605" height="74.7454" class="st6"/>
+			<text x="5.93" y="895.71" class="st7">DynamicSelect-<tspan x="32.54" dy="1.2em" class="st8">Picker</tspan></text>		</g>
+		<g id="shape145-248" transform="translate(183.658,-593.948)">
+			<title>Lien dynamique.145</title>
+			<path d="M0 937.28 L-135.66 937.28 L-135.66 1357.46 L47.04 1357.46 L47.04 1403.48" class="st9"/>
+		</g>
+		<g id="shape151-253" transform="translate(576.708,-381.072)">
+			<title>Lien dynamique.151</title>
+			<path d="M0 937.28 L-10.63 937.28 L-10.63 777.33 L-13.74 777.33" class="st9"/>
+		</g>
+		<g id="shape152-258" transform="translate(505.541,-503.647)">
+			<title>Lien dynamique.152</title>
+			<path d="M0 937.28 L0 974.53 L-74.57 974.53 L-74.57 1313.18" class="st11"/>
+		</g>
+		<g id="shape153-264" transform="translate(747.536,-241.384)">
+			<title>Lien dynamique.153</title>
+			<path d="M0 937.28 L0 976.55 L-316.56 976.55 L-316.56 1050.91" class="st11"/>
+		</g>
+		<g id="shape154-269" transform="translate(797.366,-278.756)">
+			<title>Lien dynamique.154</title>
+			<path d="M0 937.28 L15.36 937.28 L15.36 1042.27 L-166.11 1042.27 L-166.11 1088.29" class="st9"/>
+		</g>
+		<g id="shape155-274" transform="translate(354.486,-241.384)">
+			<title>Lien dynamique.155</title>
+			<path d="M0 937.28 L0 1004.9 L74.13 1004.9 A2.3622 2.3622 0 0 1 78.85 1004.9 L276.77 1004.9 L276.77 1050.91"
+					class="st9"/>
+		</g>
+		<g id="shape156-279" transform="translate(283.319,-593.948)">
+			<title>Lien dynamique.156</title>
+			<path d="M0 937.28 L34.79 937.28 L34.79 1064.84 L147.66 1064.84 L147.66 1403.48" class="st11"/>
+		</g>
+	</g>
+</svg>

@@ -1,0 +1,388 @@
+{
+    "storing_dir": "../runningDir",
+    "simulator_configs": [
+        {
+            "config_name": "RSimulator_Tutorial_calibration",
+            "config_descr": "3 inputs and 3 functional outputs.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "Tutorial_calibration",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_Tutorial_calibration.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": [
+                11,
+                10,
+                10
+            ],
+            "id": 0
+        },
+        {
+            "config_name": "RSimulator_Tutorial_calibration_vectorized",
+            "config_descr": "3 inputs and 3 functional outputs.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "Tutorial_calibration",
+            "cluster_size": 2,
+            "vector_support": true,
+            "vector_size": 5,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_Tutorial_calibration.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": [
+                11,
+                10,
+                10
+            ],
+            "id": 1
+        },
+        {
+            "config_name": "RSimulator_Tutorial_calibration_withConstr",
+            "config_descr": "3 inputs, 1 scalar output, 3 functional outputs.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "Tutorial_calibration_withConstr",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_Tutorial_calibration_withConstr.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": [
+                1,
+                [
+                    11,
+                    10,
+                    10
+                ]
+            ],
+            "id": 2
+        },
+        {
+            "config_name": "RSimulator_Tutorial_calibration_withOF",
+            "config_descr": "4 OF built from 3 functional outputs with 11 + 10 + 10 time steps",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "Tutorial_calibration_withOF",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_Tutorial_calibration_withOF.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R",
+                "data_Tutorial_calibration.csv"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 4,
+            "id": 3
+        },
+        {
+            "config_name": "RSimulator_Functional_Example",
+            "config_descr": "5 inputs and 2 functional outputs.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "functional_example",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_functional_example.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": [
+                10,
+                10
+            ],
+            "id": 4
+        },
+        {
+            "config_name": "RSimulator_int-toypb",
+            "config_descr": "2 inputs (1 continuous, 1 integer) and 1 output.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "int-toypb",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_int-toypb.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 1,
+            "id": 5
+        },
+        {
+            "config_name": "RSimulator_cat-toypb",
+            "config_descr": "2 inputs (1 continuous, 1 categorical) and 1 output.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "cat-toypb",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_cat-toypb.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 1,
+            "id": 6
+        },
+        {
+            "config_name": "RSimulator_cat-test",
+            "config_descr": "5 inputs (4 continuous, 1 categorical) and 1 output.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "cat-test",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_cat-test.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 1,
+            "id": 7
+        },
+        {
+            "config_name": "RSimulator_Ishigami",
+            "config_descr": "3 inputs and 1 output. A classical function for sensitivity analysis.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "ishigami",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_ishigami.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 1,
+            "id": 8
+        },
+        {
+            "config_name": "RSimulator_Dive",
+            "config_descr": "Diving board for uncertainty propagation.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "dive",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_dive.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 1,
+            "id": 9
+        },
+        {
+            "config_name": "RSimulator_Beam2obj",
+            "config_descr": "2 inputs and 2 outputs. A simple example of bi-objective optimization.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "beam_2obj",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_beam_2obj.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 2,
+            "id": 10
+        },
+        {
+            "config_name": "RSimulator_Flood",
+            "config_descr": "8 inputs and 2 outputs. A classical function for sensitivity analysis.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "flood",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_flood.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 2,
+            "id": 11
+        },
+        {
+            "config_name": "RSimulator_G5mod",
+            "config_descr": "G5mod function for constrained optimization.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "g5mod",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_g5mod.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 6,
+            "id": 12
+        },
+        {
+            "config_name": "RSimulator_G5mod_vectorized",
+            "config_descr": "G5mod function for constrained optimization.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "g5mod",
+            "cluster_size": 2,
+            "vector_support": true,
+            "vector_size": 5,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_g5mod.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 6,
+            "id": 13
+        },
+        {
+            "config_name": "RSimulator_G7",
+            "config_descr": "G7 function for constrained optimization.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "g7",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_g7.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 9,
+            "id": 14
+        },
+        {
+            "config_name": "RSimulator_G9",
+            "config_descr": "G9 function for constrained optimization.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "g9",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_g9.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 5,
+            "id": 15
+        },
+        {
+            "config_name": "RSimulator_g10",
+            "config_descr": "G10 function for constrained optimization.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "g10",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_g10.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 7,
+            "id": 16
+        },
+        {
+            "config_name": "RSimulator_G18",
+            "config_descr": "G18 function for constrained optimization.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "g18",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_g18.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 14,
+            "id": 17
+        },
+        {
+            "config_name": "RSimulator_GSobol",
+            "config_descr": "8 inputs and 1 output. A classical function for sensitivity analysis.",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "gsobol",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_gsobol.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 1,
+            "id": 18
+        },
+        {
+            "config_name": "RSimulator_WeldedBeam",
+            "config_descr": "Welded beam for constrained optimization",
+            "simulator_exe": "../simulator-examples/RSimulator/RSimulator.bat",
+            "argument": "wbeam",
+            "cluster_size": 2,
+            "host": "localhost",
+            "simulation_dir": "../simulator-examples/RSimulator/simulationFiles",
+            "simulation_param_files": [
+                "paramFile_wbeam.txt"
+            ],
+            "simulation_data_files": [
+                "simu.R"
+            ],
+            "result_file_name": "outputFile.csv",
+            "res_count": 5,
+            "id": 19
+        }
+   ]
+}
