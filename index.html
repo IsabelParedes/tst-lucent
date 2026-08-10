@@ -22,10 +22,11 @@
       // (username.github.io/repo/) work without absolute "/..." paths.
       const siteRoot = new URL("./", window.location.href);
       globalThis.__LUCENT__ = {
-        transportBaseUrl: new URL("_env-wasm/lib/R/library/httpuv/www/", siteRoot).href,
+        transportBaseUrl: new URL("lucent/dist/", siteRoot).href,
         serviceWorkerUrl: new URL("httpuv-sw.js", siteRoot).href,
-        rRuntimeBaseUrl: siteRoot.href,
-        hostPrefixDir: "_env-wasm",
+        rRuntimeBaseUrl: new URL("runtime/", siteRoot).href,
+        empackMetaUrl: new URL("packages/empack_env_meta.json", siteRoot).href,
+        empackPackagesBaseUrl: new URL("packages/", siteRoot).href,
         shinyBaseUrl: siteRoot.href,
       };
     </script>
