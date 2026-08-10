@@ -23,8 +23,6 @@ navigation.ui <- function(id) {
   tagList(
     useShinyjs(),
     includeScript(path = "modules/hideTabs.js"),
-    includeScript(path = "modules/menuImport/importDOE/www/launcher/socket.io.js"),
-    includeScript(path = "modules/menuImport/importDOE/www/launcher/shiny2LauncherHandler.js"),
     navbarPage(
       "Computer Code Exploration Platform Lagun (V1.0.3)", position = "fixed-top", inverse = T, windowTitle = "Lagun",
       tabPanel("Introduction", introduction.ui(id = ns("introduction")), icon = NULL),

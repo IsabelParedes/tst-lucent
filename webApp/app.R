@@ -13,6 +13,11 @@ rm(list = ls())
 # set file size limit to 500 MB
 options(shiny.maxRequestSize = 500*1024^2)
 
+# Use the in-R simulations launcher (shiny2LauncherHandler.R) instead of the
+# browser Socket.IO bridge to an external Node simulations-launcher.
+# Must be set before modules that source simulationsLauncher.R.
+options(lagun.localsimulationslauncher = TRUE)
+
 source("loadPackages.R")
 source("logger.R")
 source("utilityFunctions.R")
