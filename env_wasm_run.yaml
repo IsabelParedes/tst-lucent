@@ -1,5 +1,6 @@
 name: env_wasm_run
 channels:
+# - file:///some_dir/emscripten-forge-recipes/_output
 - https://repo.prefix.dev/emscripten-forge-4x-experimental
 - https://repo.prefix.dev/emscripten-forge-4x
 - conda-forge
@@ -7,6 +8,7 @@ channels:
 dependencies:
 - r-base ==4.5.3
 - r-main
+- r-htmltools ==0.5.9
 - r-sensitivity
 - r-dtwclust
 - r-rspectra
@@ -78,3 +80,5 @@ dependencies:
 - r-dendextend
 - r-markdown
 - r-whisker
+# Extras
+- r-thematic
