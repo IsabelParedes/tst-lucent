@@ -1,0 +1,81 @@
+name: env_native_lagun
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base ==4.5.3
+  - r-dtwclust
+  - r-rspectra
+  - r-dtw
+  - r-clue
+  - r-fbasics
+  - r-spatial
+  - r-gss
+  - r-mco
+  - r-quadprog
+  - r-energy
+  - r-gsl
+  - r-flexclust
+  - r-truncnorm
+  - r-ks
+  - r-multicool
+  - r-fnn
+  - r-kernlab
+  - r-mclust
+  - r-goftest
+  - r-rvinecopulib
+  - r-wdm
+  - r-kde1d
+  - r-randtoolbox
+  - r-rngwell
+  - r-copula
+  - r-pspline
+  - r-pcapp
+  - r-rann
+  - r-vgam
+  - bioconductor-vbmp
+  - r-robustgasp
+  - r-rocr
+  - r-crs
+  - r-shiny
+  - r-plotly
+  - r-parallelplot
+  - r-scatterplotmatrix
+  - r-shinybs
+  - r-nlcoptim
+  - r-dt
+  - r-pairsd3
+  - r-shinywidgets
+  - r-shinyjs
+  - r-shinycssloaders
+  - r-future.callr
+  - r-parallelly
+  - r-corrplot
+  - r-shinyfeedback
+  - r-reshape2
+  - r-dicedesign
+  - r-nloptr
+  - r-base64enc
+  - r-mass
+  - r-glmnet
+  - r-stringi
+  - r-digest
+  - r-zip
+  - r-ggplot2
+  - r-rcolorbrewer
+  - r-viridis
+  - r-abind
+  - r-promises
+  - r-arsenal
+  - r-dendextend
+  - r-markdown
+  - r-whisker
+  # To install github packages
+  - r-devtools
+  - r-remotes
+  # Not available
+  # - r-sensitivity   # install.packages("sensitivity")
+  # - r-maxpro        # install.packages("MaxPro")
+  # - r-foptions      # (from GH) pak::pak("cran/foptions")
+  # - r-slhd          # install.packages("SLHD")
+  # - r-sirus         # (from GH) pak::pak("cran/sirus")
