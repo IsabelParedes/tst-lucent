@@ -1,0 +1,9 @@
+{
+  "name": "shiny-site",
+  "private": true,
+  "description": "Browser harness dev server for Lucent + R.wasm + Shiny",
+  "type": "module",
+  "scripts": {
+    "serve": "node serve.mjs"
+  }
+}
