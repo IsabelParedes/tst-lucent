@@ -29,6 +29,16 @@ npm run serve                    # port 9008 (override: npm run serve -- 8080)
 
 For debugging: `http://localhost:9008/?httpuvDebug=1`
 
+## Testing with native R
+
+Create environment (`env_native_lagun.yaml`)
+
+```R
+library(shiny)
+options(browser="chromium")
+runApp("./webApp")
+```
+
 ## Serving layout
 
 ```
