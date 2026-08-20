@@ -2,6 +2,7 @@ library(shiny)
 library(bslib)
 library(thematic)
 library(plotly)
+library(ggplot2)
 
 thematic_shiny(font = "auto")
 
@@ -18,7 +19,10 @@ ui <- page_sidebar(
     selectInput("ycol", "Y Variable", vars, selected = vars[[2]]),
     numericInput("clusters", "Cluster count", 3, min = 1, max = 9)
   ),
-  card(plotlyOutput("plot1"))
+  layout_columns(
+    card(card_header("plotly"), plotlyOutput("plot1")),
+    card(card_header("ggplot2"), plotOutput("plot2"))
+  )
 )
 
 server <- function(input, output, session) {
@@ -32,7 +36,7 @@ server <- function(input, output, session) {
     kmeans(selectedData(), input$clusters)
   })
 
-  output$plot1 <- renderPlotly({
+  plotData <- reactive({
     df <- selectedData()
     km <- clusters()
     xcol <- input$xcol
@@ -41,6 +45,16 @@ server <- function(input, output, session) {
     df$cluster <- factor(km$cluster)
     centers <- as.data.frame(km$centers)
     colnames(centers) <- c(xcol, ycol)
+
+    list(df = df, centers = centers, xcol = xcol, ycol = ycol)
+  })
+
+  output$plot1 <- renderPlotly({
+    d <- plotData()
+    df <- d$df
+    centers <- d$centers
+    xcol <- d$xcol
+    ycol <- d$ycol
 
     plot_ly(
       df,
@@ -63,6 +77,28 @@ server <- function(input, output, session) {
         xaxis = list(title = xcol),
         yaxis = list(title = ycol)
       )
+  })
+
+  output$plot2 <- renderPlot({
+    d <- plotData()
+    df <- d$df
+    centers <- d$centers
+    xcol <- d$xcol
+    ycol <- d$ycol
+
+    ggplot(df, aes(.data[[xcol]], .data[[ycol]], color = cluster)) +
+      geom_point(size = 3) +
+      geom_point(
+        data = centers,
+        aes(.data[[xcol]], .data[[ycol]]),
+        color = "black",
+        shape = 4,
+        size = 4,
+        stroke = 1.5,
+        inherit.aes = FALSE
+      ) +
+      labs(x = xcol, y = ycol) +
+      theme(legend.position = "right")
   })
 
 }
