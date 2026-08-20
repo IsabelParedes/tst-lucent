@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          micromamba create -f env_wasm_run.yaml -p ./_prefix-wasm \
+          micromamba create -f env_wasm_run_simple.yaml -p ./_prefix-wasm \
             --platform=emscripten-wasm32
 
           chmod +x pack-empack.sh

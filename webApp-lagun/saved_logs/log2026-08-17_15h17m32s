@@ -1,0 +1,14 @@
+[1] "Doing application setup"
+
+Listening on http://127.0.0.1:4972
+[1] "<Who: cea8bd0ea490209b5b7e4ea4ec98aa3d Where: app.R#109 When: 2026-08-17_15h17m33s>"
+[1] "Connection to Lagun"
+[1] "<Who: cea8bd0ea490209b5b7e4ea4ec98aa3d Where: directOptim.R#362 When: 2026-08-17_15h17m34s>"
+[1] "TMP_DIR=/tmp/RtmpN6cVyw"
+[1] "!!!!! connectToSimulationsLauncher"
+[1] "<Who: cea8bd0ea490209b5b7e4ea4ec98aa3d Where: importDOE.R#396 When: 2026-08-17_15h17m44s>"
+[1] "'launcherProtocolVersion' value received: 3"
+[1] "!!!!! retrieveLauncherData"
+
+
+[1] "Doing application cleanup"
