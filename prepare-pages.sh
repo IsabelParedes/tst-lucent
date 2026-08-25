@@ -32,7 +32,8 @@ cp -f "$SITE_DIR/index.html" "$OUT/index.html"
 cp -f "$SITE_DIR/style.css" "$OUT/style.css"
 cp -f "$SITE_DIR/favicon.svg" "$OUT/favicon.svg"
 # Source tree kept for reference/editing; runtime app comes from empack webApp archive.
-cp -a "$SITE_DIR/webApp" "$OUT/webApp"
+# webApp may be a symlink (e.g. -> webApp-lagun/); -L copies the real directory.
+cp -aL "$SITE_DIR/webApp" "$OUT/webApp"
 cp -a "$SITE_DIR/lucent/dist" "$OUT/lucent/dist"
 cp -a "$SITE_DIR/packages" "$OUT/packages"
 cp -a "$SITE_DIR/runtime" "$OUT/runtime"
