@@ -1,8 +1,7 @@
 name: env_wasm_run
 channels:
-# - file:///some_dir/emscripten-forge-recipes/_output
-- https://repo.prefix.dev/emscripten-forge-4x-experimental
 - https://repo.prefix.dev/emscripten-forge-4x
+- https://repo.prefix.dev/emscripten-forge-4x-experimental
 - conda-forge
 - bioconda
 dependencies:
@@ -48,6 +47,7 @@ dependencies:
 - r-rocr
 - r-crs
 - r-shiny
+- r-bslib
 - r-plotly
 - r-parallelplot
 - r-scatterplotmatrix
@@ -83,5 +83,5 @@ dependencies:
 # Extras
 - r-thematic
 - r-reticulate
+- scikit-learn ==1.8.0
 - numpy
-- scikit-learn
