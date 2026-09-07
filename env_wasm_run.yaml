@@ -80,6 +80,7 @@ dependencies:
 - r-dendextend
 - r-markdown
 - r-whisker
+- r-e1071
 # Extras
 - r-thematic
 - r-reticulate
